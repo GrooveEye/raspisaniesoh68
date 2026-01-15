@@ -6,7 +6,8 @@ import type {
   Subject, 
   Extracurricular, 
   LoadAssignment,
-  ExtracurricularAssignment 
+  ExtracurricularAssignment,
+  CurriculumPlan 
 } from '@/types';
 
 interface AppContextType {
@@ -17,6 +18,7 @@ interface AppContextType {
   extracurriculars: Extracurricular[];
   loadAssignments: LoadAssignment[];
   extracurricularAssignments: ExtracurricularAssignment[];
+  curriculumPlan: CurriculumPlan;
   
   // Методы для учителей
   addTeacher: (teacher: Teacher) => void;
@@ -49,12 +51,18 @@ interface AppContextType {
   updateExtracurricularAssignment: (id: string, assignment: Partial<ExtracurricularAssignment>) => void;
   deleteExtracurricularAssignment: (id: string) => void;
   
+  // Методы для учебного плана
+  setCurriculumHours: (subjectId: string, classId: string, hours: number) => void;
+  getCurriculumHours: (subjectId: string, classId: string) => number;
+  clearCurriculumPlan: () => void;
+  
   // Импорт/экспорт
   importData: (data: Partial<{
     teachers: Teacher[];
     classes: SchoolClass[];
     subjects: Subject[];
     extracurriculars: Extracurricular[];
+    curriculumPlan: CurriculumPlan;
   }>) => void;
   clearAllData: () => void;
 }
@@ -68,6 +76,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [extracurriculars, setExtracurriculars] = useLocalStorage<Extracurricular[]>('school-plan-extracurriculars', []);
   const [loadAssignments, setLoadAssignments] = useLocalStorage<LoadAssignment[]>('school-plan-load-assignments', []);
   const [extracurricularAssignments, setExtracurricularAssignments] = useLocalStorage<ExtracurricularAssignment[]>('school-plan-extracurricular-assignments', []);
+  const [curriculumPlan, setCurriculumPlan] = useLocalStorage<CurriculumPlan>('school-plan-curriculum', {});
 
   // Учителя
   const addTeacher = (teacher: Teacher) => {
@@ -153,17 +162,40 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setExtracurricularAssignments(prev => prev.filter(a => a.id !== id));
   };
 
+  // Учебный план
+  const setCurriculumHours = (subjectId: string, classId: string, hours: number) => {
+    const key = `${subjectId}_${classId}`;
+    setCurriculumPlan(prev => {
+      if (hours === 0) {
+        const { [key]: _, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [key]: hours };
+    });
+  };
+
+  const getCurriculumHours = (subjectId: string, classId: string): number => {
+    const key = `${subjectId}_${classId}`;
+    return curriculumPlan[key] || 0;
+  };
+
+  const clearCurriculumPlan = () => {
+    setCurriculumPlan({});
+  };
+
   // Импорт данных
   const importData = (data: Partial<{
     teachers: Teacher[];
     classes: SchoolClass[];
     subjects: Subject[];
     extracurriculars: Extracurricular[];
+    curriculumPlan: CurriculumPlan;
   }>) => {
     if (data.teachers) setTeachers(prev => [...prev, ...data.teachers!]);
     if (data.classes) setClasses(prev => [...prev, ...data.classes!]);
     if (data.subjects) setSubjects(prev => [...prev, ...data.subjects!]);
     if (data.extracurriculars) setExtracurriculars(prev => [...prev, ...data.extracurriculars!]);
+    if (data.curriculumPlan) setCurriculumPlan(prev => ({ ...prev, ...data.curriculumPlan! }));
   };
 
   // Очистка всех данных
@@ -174,6 +206,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setExtracurriculars([]);
     setLoadAssignments([]);
     setExtracurricularAssignments([]);
+    setCurriculumPlan({});
   };
 
   const value: AppContextType = {
@@ -202,6 +235,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     addExtracurricularAssignment,
     updateExtracurricularAssignment,
     deleteExtracurricularAssignment,
+    curriculumPlan,
+    setCurriculumHours,
+    getCurriculumHours,
+    clearCurriculumPlan,
     importData,
     clearAllData,
   };

@@ -21,7 +21,9 @@ export default function Distribution() {
     loadAssignments, 
     addLoadAssignment, 
     deleteLoadAssignment,
-    setLoadAssignments 
+    setLoadAssignments,
+    getCurriculumHours,
+    curriculumPlan 
   } = useApp();
   
   const [isAutoDialogOpen, setIsAutoDialogOpen] = useState(false);
@@ -30,17 +32,9 @@ export default function Distribution() {
   const [selectedClass, setSelectedClass] = useState<string>('');
   const [selectedTeacher, setSelectedTeacher] = useState<string>('');
 
-  // Расчёт часов для предмета в классе
+  // Получить часы из учебного плана
   const getSubjectHours = (subjectId: string, classId: string) => {
-    const subject = subjects.find(s => s.id === subjectId);
-    const cls = classes.find(c => c.id === classId);
-    if (!subject || !cls) return 0;
-    
-    const baseHours = subject.hoursPerWeek[cls.grade] || 0;
-    if (subject.requiresGroupSplit && subject.groupSplitThreshold && cls.studentCount > subject.groupSplitThreshold) {
-      return baseHours; // Часы на одну группу (будет 2 назначения)
-    }
-    return baseHours;
+    return getCurriculumHours(subjectId, classId);
   };
 
   // Проверка, требуется ли деление на группы
@@ -110,7 +104,7 @@ export default function Distribution() {
       underloadedTeachers,
       uncoveredHours,
     };
-  }, [loadAssignments, teacherLoads, classes, subjects]);
+  }, [loadAssignments, teacherLoads, classes, subjects, curriculumPlan]);
 
   // Матрица распределения (предмет × класс)
   const distributionMatrix = useMemo(() => {
@@ -141,7 +135,7 @@ export default function Distribution() {
     });
 
     return matrix;
-  }, [subjects, classes, loadAssignments, teachers]);
+  }, [subjects, classes, loadAssignments, teachers, curriculumPlan]);
 
   // Автоматическое распределение
   const autoDistribute = () => {
@@ -236,6 +230,9 @@ export default function Distribution() {
     return teachers.filter(t => t.subjects.includes(subject.name));
   }, [selectedSubject, subjects, teachers]);
 
+  // Проверка, заполнен ли учебный план
+  const hasCurriculumData = Object.keys(curriculumPlan).length > 0;
+
   if (teachers.length === 0 || classes.length === 0 || subjects.length === 0) {
     return (
       <div className="space-y-6">
@@ -249,6 +246,26 @@ export default function Distribution() {
           <AlertTitle>Недостаточно данных</AlertTitle>
           <AlertDescription>
             Для распределения нагрузки необходимо добавить учителей, классы и предметы в справочниках.
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
+  if (!hasCurriculumData) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Распределение нагрузки</h1>
+          <p className="text-muted-foreground">Назначение учителей на предметы и классы</p>
+        </div>
+        
+        <Alert>
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Учебный план не заполнен</AlertTitle>
+          <AlertDescription>
+            Сначала заполните учебный план (раздел «Учебный план»), указав количество часов по предметам и классам. 
+            После этого система сможет автоматически распределить нагрузку между учителями.
           </AlertDescription>
         </Alert>
       </div>
