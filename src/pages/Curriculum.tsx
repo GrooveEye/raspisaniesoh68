@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useRef, useEffect } from 'react';
 import { useApp } from '@/context/AppContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -6,8 +6,9 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AlertTriangle, CheckCircle, Info, Calendar } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Input } from '@/components/ui/input';
 
-// Нормы СанПиН по максимальной недельной нагрузке
+// Нормы СанПиН по максимальной недельной нагрузке (справочно)
 const SANPIN_MAX_HOURS: Record<number, number> = {
   1: 21,
   2: 23,
@@ -22,8 +23,76 @@ const SANPIN_MAX_HOURS: Record<number, number> = {
   11: 34,
 };
 
+// Компонент редактируемой ячейки
+function EditableCell({ 
+  value, 
+  onChange,
+  subjectId,
+  classId,
+}: { 
+  value: number; 
+  onChange: (subjectId: string, classId: string, hours: number) => void;
+  subjectId: string;
+  classId: string;
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [inputValue, setInputValue] = useState(String(value || ''));
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [isEditing]);
+
+  useEffect(() => {
+    setInputValue(String(value || ''));
+  }, [value]);
+
+  const handleSave = () => {
+    const hours = parseInt(inputValue) || 0;
+    onChange(subjectId, classId, hours);
+    setIsEditing(false);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleSave();
+    } else if (e.key === 'Escape') {
+      setInputValue(String(value || ''));
+      setIsEditing(false);
+    }
+  };
+
+  if (isEditing) {
+    return (
+      <Input
+        ref={inputRef}
+        type="number"
+        min="0"
+        max="20"
+        className="w-14 h-8 text-center p-1"
+        value={inputValue}
+        onChange={(e) => setInputValue(e.target.value)}
+        onBlur={handleSave}
+        onKeyDown={handleKeyDown}
+      />
+    );
+  }
+
+  return (
+    <div 
+      className="cursor-pointer hover:bg-muted rounded px-2 py-1 min-w-[40px] transition-colors"
+      onClick={() => setIsEditing(true)}
+    >
+      {value > 0 ? value : <span className="text-muted-foreground">—</span>}
+    </div>
+  );
+}
+
 export default function Curriculum() {
-  const { classes, subjects } = useApp();
+  const { classes, subjects, curriculumPlan, setCurriculumHours, getCurriculumHours } = useApp();
   const [selectedGrade, setSelectedGrade] = useState<string>('all');
 
   // Группировка классов по параллелям
@@ -35,7 +104,6 @@ export default function Curriculum() {
       }
       grouped[cls.grade].push(cls);
     });
-    // Сортировка по буквам внутри каждой параллели
     Object.keys(grouped).forEach(grade => {
       grouped[Number(grade)].sort((a, b) => a.letter.localeCompare(b.letter));
     });
@@ -50,29 +118,19 @@ export default function Curriculum() {
   // Фильтрация классов по выбранной параллели
   const filteredClasses = useMemo(() => {
     if (selectedGrade === 'all') {
-      return classes.sort((a, b) => a.grade - b.grade || a.letter.localeCompare(b.letter));
+      return [...classes].sort((a, b) => a.grade - b.grade || a.letter.localeCompare(b.letter));
     }
     return classesByGrade[Number(selectedGrade)] || [];
   }, [selectedGrade, classes, classesByGrade]);
 
-  // Расчёт часов для класса по предмету
-  const getSubjectHours = (subject: typeof subjects[0], grade: number, studentCount: number) => {
-    const baseHours = subject.hoursPerWeek[grade] || 0;
-    // Если требуется деление на группы и количество учеников превышает порог
-    if (subject.requiresGroupSplit && subject.groupSplitThreshold && studentCount > subject.groupSplitThreshold) {
-      return baseHours * 2; // Удвоение часов для двух групп
-    }
-    return baseHours;
-  };
-
   // Общая нагрузка по классу
   const getTotalHours = (cls: typeof classes[0]) => {
     return subjects.reduce((total, subject) => {
-      return total + getSubjectHours(subject, cls.grade, cls.studentCount);
+      return total + getCurriculumHours(subject.id, cls.id);
     }, 0);
   };
 
-  // Проверка соответствия СанПиН
+  // Проверка соответствия СанПиН (только предупреждение)
   const checkSanpin = (cls: typeof classes[0]) => {
     const totalHours = getTotalHours(cls);
     const maxHours = SANPIN_MAX_HOURS[cls.grade] || 34;
@@ -86,15 +144,15 @@ export default function Curriculum() {
 
   // Статистика по учебному плану
   const stats = useMemo(() => {
-    const violations = filteredClasses.filter(cls => !checkSanpin(cls).isValid);
+    const warnings = filteredClasses.filter(cls => !checkSanpin(cls).isValid);
     const totalHoursAll = filteredClasses.reduce((sum, cls) => sum + getTotalHours(cls), 0);
     return {
       classCount: filteredClasses.length,
       subjectCount: subjects.length,
-      violations: violations.length,
+      warnings: warnings.length,
       totalHours: totalHoursAll,
     };
-  }, [filteredClasses, subjects]);
+  }, [filteredClasses, subjects, curriculumPlan]);
 
   // Сводка по предметным областям
   const areasSummary = useMemo(() => {
@@ -104,12 +162,14 @@ export default function Curriculum() {
         areas[subject.area] = { subjects: [], totalHours: 0 };
       }
       areas[subject.area].subjects.push(subject.name);
-      // Считаем часы по всем параллелям
-      const subjectHours = Object.values(subject.hoursPerWeek).reduce((a, b) => a + b, 0);
+      // Считаем часы из учебного плана
+      const subjectHours = classes.reduce((sum, cls) => {
+        return sum + getCurriculumHours(subject.id, cls.id);
+      }, 0);
       areas[subject.area].totalHours += subjectHours;
     });
     return areas;
-  }, [subjects]);
+  }, [subjects, classes, curriculumPlan]);
 
   if (classes.length === 0 || subjects.length === 0) {
     return (
@@ -134,7 +194,7 @@ export default function Curriculum() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Учебный план</h1>
-        <p className="text-muted-foreground">Формирование учебного плана школы по ФГОС</p>
+        <p className="text-muted-foreground">Кликните на ячейку для ввода количества часов</p>
       </div>
 
       {/* Статистика */}
@@ -168,16 +228,16 @@ export default function Curriculum() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Нарушения СанПиН</CardTitle>
-            {stats.violations > 0 ? (
-              <AlertTriangle className="h-4 w-4 text-destructive" />
+            <CardTitle className="text-sm font-medium">Предупреждения СанПиН</CardTitle>
+            {stats.warnings > 0 ? (
+              <AlertTriangle className="h-4 w-4 text-amber-500" />
             ) : (
               <CheckCircle className="h-4 w-4 text-green-500" />
             )}
           </CardHeader>
           <CardContent>
-            <div className={`text-2xl font-bold ${stats.violations > 0 ? 'text-destructive' : 'text-green-500'}`}>
-              {stats.violations}
+            <div className={`text-2xl font-bold ${stats.warnings > 0 ? 'text-amber-500' : 'text-green-500'}`}>
+              {stats.warnings}
             </div>
           </CardContent>
         </Card>
@@ -187,7 +247,7 @@ export default function Curriculum() {
         <TabsList>
           <TabsTrigger value="plan">Учебный план</TabsTrigger>
           <TabsTrigger value="areas">По предметным областям</TabsTrigger>
-          <TabsTrigger value="sanpin">Контроль СанПиН</TabsTrigger>
+          <TabsTrigger value="sanpin">Справка СанПиН</TabsTrigger>
         </TabsList>
 
         <TabsContent value="plan" className="space-y-4">
@@ -248,18 +308,15 @@ export default function Curriculum() {
                           </div>
                         </TableCell>
                         {filteredClasses.map(cls => {
-                          const hours = getSubjectHours(subject, cls.grade, cls.studentCount);
-                          const baseHours = subject.hoursPerWeek[cls.grade] || 0;
-                          const isDoubled = hours > baseHours;
+                          const hours = getCurriculumHours(subject.id, cls.id);
                           return (
-                            <TableCell key={cls.id} className="text-center">
-                              {hours > 0 ? (
-                                <span className={isDoubled ? 'text-blue-600 font-medium' : ''}>
-                                  {hours}
-                                </span>
-                              ) : (
-                                <span className="text-muted-foreground">—</span>
-                              )}
+                            <TableCell key={cls.id} className="text-center p-1">
+                              <EditableCell
+                                value={hours}
+                                onChange={setCurriculumHours}
+                                subjectId={subject.id}
+                                classId={cls.id}
+                              />
                             </TableCell>
                           );
                         })}
@@ -272,10 +329,13 @@ export default function Curriculum() {
                         const sanpin = checkSanpin(cls);
                         return (
                           <TableCell key={cls.id} className="text-center">
-                            <span className={!sanpin.isValid ? 'text-destructive' : ''}>
+                            <span className={!sanpin.isValid ? 'text-amber-600' : ''}>
                               {sanpin.total}
                             </span>
                             <span className="text-xs text-muted-foreground">/{sanpin.max}</span>
+                            {!sanpin.isValid && (
+                              <AlertTriangle className="h-3 w-3 inline ml-1 text-amber-500" />
+                            )}
                           </TableCell>
                         );
                       })}
@@ -287,8 +347,8 @@ export default function Curriculum() {
           </Card>
 
           <div className="text-sm text-muted-foreground space-y-1">
-            <p><Badge variant="secondary" className="text-xs mr-1">÷</Badge> — предмет с делением на группы</p>
-            <p><span className="text-blue-600 font-medium">Синим</span> — часы удвоены из-за деления на группы</p>
+            <p><Badge variant="secondary" className="text-xs mr-1">÷</Badge> — предмет с делением на группы (учтите при распределении)</p>
+            <p><AlertTriangle className="h-3 w-3 inline mr-1 text-amber-500" /> — превышение рекомендаций СанПиН (не является ошибкой)</p>
           </div>
         </TabsContent>
 
@@ -317,7 +377,7 @@ export default function Curriculum() {
                           ))}
                         </div>
                         <p className="text-sm text-muted-foreground">
-                          Всего часов (сумма по параллелям): <strong>{data.totalHours}</strong>
+                          Всего часов: <strong>{data.totalHours}</strong>
                         </p>
                       </div>
                     </CardContent>
@@ -329,11 +389,19 @@ export default function Curriculum() {
         </TabsContent>
 
         <TabsContent value="sanpin" className="space-y-4">
+          <Alert>
+            <Info className="h-4 w-4" />
+            <AlertTitle>Справочная информация</AlertTitle>
+            <AlertDescription>
+              Нормы СанПиН носят рекомендательный характер. Превышение не блокирует работу системы.
+            </AlertDescription>
+          </Alert>
+
           <Card>
             <CardHeader>
-              <CardTitle>Контроль соответствия СанПиН</CardTitle>
+              <CardTitle>Соответствие рекомендациям СанПиН</CardTitle>
               <CardDescription>
-                Проверка максимальной недельной нагрузки учащихся
+                Рекомендуемая максимальная недельная нагрузка учащихся
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -343,7 +411,7 @@ export default function Curriculum() {
                     <TableHead>Класс</TableHead>
                     <TableHead>Профиль</TableHead>
                     <TableHead className="text-right">Фактическая нагрузка</TableHead>
-                    <TableHead className="text-right">Норма СанПиН</TableHead>
+                    <TableHead className="text-right">Рекомендация СанПиН</TableHead>
                     <TableHead className="text-center">Статус</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -358,7 +426,7 @@ export default function Curriculum() {
                           <TableCell>
                             <Badge variant="outline">{cls.profile}</Badge>
                           </TableCell>
-                          <TableCell className={`text-right font-medium ${!sanpin.isValid ? 'text-destructive' : ''}`}>
+                          <TableCell className={`text-right font-medium ${!sanpin.isValid ? 'text-amber-600' : ''}`}>
                             {sanpin.total} ч.
                           </TableCell>
                           <TableCell className="text-right">{sanpin.max} ч.</TableCell>
@@ -366,10 +434,10 @@ export default function Curriculum() {
                             {sanpin.isValid ? (
                               <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
                                 <CheckCircle className="h-3 w-3 mr-1" />
-                                Норма
+                                В норме
                               </Badge>
                             ) : (
-                              <Badge variant="destructive">
+                              <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
                                 <AlertTriangle className="h-3 w-3 mr-1" />
                                 +{sanpin.overflow} ч.
                               </Badge>
@@ -385,9 +453,9 @@ export default function Curriculum() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Нормы СанПиН</CardTitle>
+              <CardTitle>Справочник норм СанПиН</CardTitle>
               <CardDescription>
-                Максимально допустимая недельная нагрузка учащихся
+                Рекомендуемая максимальная недельная нагрузка по классам
               </CardDescription>
             </CardHeader>
             <CardContent>

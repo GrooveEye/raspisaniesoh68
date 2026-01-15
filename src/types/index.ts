@@ -55,6 +55,10 @@ export interface ExtracurricularAssignment {
   hoursPerWeek: number;
 }
 
+// Учебный план: часы по предметам и классам
+// Ключ: `${subjectId}_${classId}`, значение: часы в неделю
+export type CurriculumPlan = Record<string, number>;
+
 export interface TeacherLoad {
   teacherId: string;
   teacherName: string;
@@ -74,4 +78,5 @@ export interface AppState {
   extracurriculars: Extracurricular[];
   loadAssignments: LoadAssignment[];
   extracurricularAssignments: ExtracurricularAssignment[];
+  curriculumPlan: CurriculumPlan;
 }
