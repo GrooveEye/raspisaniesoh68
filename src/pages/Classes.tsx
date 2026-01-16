@@ -85,8 +85,10 @@ export default function Classes() {
   const getProfileColor = (profile: SchoolClass['profile']) => {
     switch (profile) {
       case 'гуманитарный': return 'bg-pink-100 text-pink-800';
-      case 'технический': return 'bg-blue-100 text-blue-800';
-      case 'естественнонаучный': return 'bg-green-100 text-green-800';
+      case 'социально-экономический': return 'bg-amber-100 text-amber-800';
+      case 'технологический': return 'bg-blue-100 text-blue-800';
+      case 'естественно-научный': return 'bg-green-100 text-green-800';
+      case 'универсальный': return 'bg-purple-100 text-purple-800';
       default: return 'bg-gray-100 text-gray-800';
     }
   };
@@ -194,8 +196,10 @@ export default function Classes() {
                   <SelectContent>
                     <SelectItem value="общеобразовательный">Общеобразовательный</SelectItem>
                     <SelectItem value="гуманитарный">Гуманитарный</SelectItem>
-                    <SelectItem value="технический">Технический</SelectItem>
-                    <SelectItem value="естественнонаучный">Естественнонаучный</SelectItem>
+                    <SelectItem value="социально-экономический">Социально-экономический</SelectItem>
+                    <SelectItem value="технологический">Технологический</SelectItem>
+                    <SelectItem value="естественно-научный">Естественно-научный</SelectItem>
+                    <SelectItem value="универсальный">Универсальный</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

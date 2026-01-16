@@ -46,12 +46,9 @@ const subjectAreas = [
 const emptySubject: Omit<Subject, 'id'> = {
   name: "",
   area: subjectAreas[0],
-  hoursPerWeek: {},
   requiresGroupSplit: false,
   groupSplitThreshold: 25,
 };
-
-const grades = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
 
 export default function Subjects() {
   const { subjects, addSubject, updateSubject, deleteSubject } = useApp();
@@ -71,7 +68,6 @@ export default function Subjects() {
       setFormData({
         name: subject.name,
         area: subject.area,
-        hoursPerWeek: { ...subject.hoursPerWeek },
         requiresGroupSplit: subject.requiresGroupSplit,
         groupSplitThreshold: subject.groupSplitThreshold,
       });
@@ -95,16 +91,6 @@ export default function Subjects() {
     setEditingSubject(null);
   };
 
-  const handleHoursChange = (grade: number, hours: number) => {
-    setFormData(prev => ({
-      ...prev,
-      hoursPerWeek: {
-        ...prev.hoursPerWeek,
-        [grade]: hours
-      }
-    }));
-  };
-
   const getAreaColor = (area: string) => {
     const colors: Record<string, string> = {
       "Русский язык и литература": "bg-red-100 text-red-800",
@@ -119,16 +105,12 @@ export default function Subjects() {
     return colors[area] || "bg-gray-100 text-gray-800";
   };
 
-  const getTotalHours = (hours: Record<number, number>) => {
-    return Object.values(hours).reduce((sum, h) => sum + (h || 0), 0);
-  };
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Предметы</h1>
-          <p className="text-muted-foreground">Учебные предметы с часами по ФГОС</p>
+          <p className="text-muted-foreground">Учебные предметы и настройки деления на группы</p>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
@@ -137,7 +119,7 @@ export default function Subjects() {
               Добавить предмет
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogContent>
             <DialogHeader>
               <DialogTitle>
                 {editingSubject ? "Редактировать предмет" : "Новый предмет"}
@@ -173,26 +155,6 @@ export default function Subjects() {
                       ))}
                     </SelectContent>
                   </Select>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Часы по параллелям (в неделю)</Label>
-                <div className="grid grid-cols-6 gap-2">
-                  {grades.map(grade => (
-                    <div key={grade} className="space-y-1">
-                      <Label className="text-xs text-center block">{grade} кл.</Label>
-                      <Input
-                        type="number"
-                        min={0}
-                        max={10}
-                        value={formData.hoursPerWeek[grade] || ""}
-                        onChange={(e) => handleHoursChange(grade, parseInt(e.target.value) || 0)}
-                        className="text-center"
-                        placeholder="0"
-                      />
-                    </div>
-                  ))}
                 </div>
               </div>
 
@@ -261,24 +223,20 @@ export default function Subjects() {
         </p>
       </div>
 
-      <div className="border rounded-lg overflow-x-auto">
+      <div className="border rounded-lg">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Предмет</TableHead>
               <TableHead>Предметная область</TableHead>
-              {grades.map(grade => (
-                <TableHead key={grade} className="text-center w-12">{grade}</TableHead>
-              ))}
-              <TableHead className="text-center">Всего</TableHead>
-              <TableHead>Деление</TableHead>
+              <TableHead>Деление на группы</TableHead>
               <TableHead className="w-[100px]">Действия</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filteredSubjects.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={15} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
                   {subjects.length === 0 
                     ? "Нет добавленных предметов. Нажмите «Добавить предмет» для начала."
                     : "Ничего не найдено"
@@ -294,20 +252,14 @@ export default function Subjects() {
                       {subject.area}
                     </Badge>
                   </TableCell>
-                  {grades.map(grade => (
-                    <TableCell key={grade} className="text-center">
-                      {subject.hoursPerWeek[grade] || "-"}
-                    </TableCell>
-                  ))}
-                  <TableCell className="text-center font-medium">
-                    {getTotalHours(subject.hoursPerWeek)}
-                  </TableCell>
                   <TableCell>
-                    {subject.requiresGroupSplit && (
+                    {subject.requiresGroupSplit ? (
                       <Badge variant="outline" className="flex items-center gap-1 w-fit">
                         <Users className="h-3 w-3" />
-                        {subject.groupSplitThreshold}+
+                        от {subject.groupSplitThreshold}+ чел.
                       </Badge>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
                     )}
                   </TableCell>
                   <TableCell>
