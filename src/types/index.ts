@@ -6,7 +6,7 @@ export interface Teacher {
   position: string;
   qualification: 'без категории' | 'первая' | 'высшая';
   subjects: string[];
-  rate: number; // ставка: 0.5, 1.0, 1.5 и т.д.
+  minHours: number; // минимальная нагрузка в часах
   maxHours: number; // максимальная нагрузка в часах
   status: 'штатный' | 'внешний совместитель' | 'внутренний совместитель';
 }
@@ -64,7 +64,7 @@ export interface TeacherLoad {
   subjectHours: { subjectName: string; className: string; hours: number }[];
   extracurricularHours: { name: string; hours: number }[];
   totalHours: number;
-  rate: number;
+  minHours: number;
   maxHours: number;
   loadPercentage: number;
 }

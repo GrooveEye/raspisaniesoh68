@@ -69,7 +69,7 @@ export default function Distribution() {
         subjectHours,
         extracurricularHours: [],
         totalHours,
-        rate: teacher.rate,
+        minHours: teacher.minHours,
         maxHours: teacher.maxHours,
         loadPercentage,
       };
@@ -141,12 +141,29 @@ export default function Distribution() {
   const autoDistribute = () => {
     const newAssignments: LoadAssignment[] = [];
     const teacherHours: Record<string, number> = {};
+    const teacherGrades: Record<string, Set<number>> = {}; // Параллели, которые уже ведёт учитель
+    const teacherAreas: Record<string, Set<string>> = {}; // Предметные области, которые ведёт учитель
     
     // Инициализация счётчиков часов учителей
     teachers.forEach(t => {
       teacherHours[t.id] = 0;
+      teacherGrades[t.id] = new Set();
+      teacherAreas[t.id] = new Set();
     });
 
+    // Создаём список заданий для распределения: (класс, предмет, группа, часы)
+    interface DistributionTask {
+      classId: string;
+      grade: number;
+      subjectId: string;
+      subjectName: string;
+      subjectArea: string;
+      hours: number;
+      groupNumber?: number;
+    }
+
+    const tasks: DistributionTask[] = [];
+    
     // Сортировка классов по параллели
     const sortedClasses = [...classes].sort((a, b) => a.grade - b.grade || a.letter.localeCompare(b.letter));
 
@@ -159,34 +176,83 @@ export default function Distribution() {
         const groupCount = needsSplit ? 2 : 1;
 
         for (let group = 1; group <= groupCount; group++) {
-          // Найти подходящего учителя
-          const suitableTeachers = teachers
-            .filter(t => t.subjects.includes(subject.name))
-            .filter(t => teacherHours[t.id] + hours <= t.maxHours)
-            .sort((a, b) => {
-              // Приоритет: штатные сначала, потом по загрузке
-              const statusOrder = { 'штатный': 0, 'внутренний совместитель': 1, 'внешний совместитель': 2 };
-              const statusDiff = statusOrder[a.status] - statusOrder[b.status];
-              if (statusDiff !== 0) return statusDiff;
-              // Потом по текущей загрузке (менее загруженные первые)
-              return (teacherHours[a.id] / a.maxHours) - (teacherHours[b.id] / b.maxHours);
-            });
-
-          if (suitableTeachers.length > 0) {
-            const teacher = suitableTeachers[0];
-            newAssignments.push({
-              id: crypto.randomUUID(),
-              teacherId: teacher.id,
-              subjectId: subject.id,
-              classId: cls.id,
-              hoursPerWeek: hours,
-              isGroup: needsSplit,
-              groupNumber: needsSplit ? group : undefined,
-            });
-            teacherHours[teacher.id] += hours;
-          }
+          tasks.push({
+            classId: cls.id,
+            grade: cls.grade,
+            subjectId: subject.id,
+            subjectName: subject.name,
+            subjectArea: subject.area,
+            hours,
+            groupNumber: needsSplit ? group : undefined,
+          });
         }
       });
+    });
+
+    // Сортируем задачи: сначала по предметной области, затем по предмету, затем по параллели
+    // Это помогает группировать похожие назначения вместе
+    tasks.sort((a, b) => {
+      if (a.subjectArea !== b.subjectArea) return a.subjectArea.localeCompare(b.subjectArea);
+      if (a.subjectId !== b.subjectId) return a.subjectName.localeCompare(b.subjectName);
+      return a.grade - b.grade;
+    });
+
+    // Функция для расчёта приоритета учителя
+    const calculateTeacherScore = (teacher: typeof teachers[0], task: DistributionTask): number => {
+      let score = 0;
+      
+      // Штатные сотрудники имеют приоритет
+      const statusOrder = { 'штатный': 100, 'внутренний совместитель': 50, 'внешний совместитель': 0 };
+      score += statusOrder[teacher.status];
+      
+      // Бонус за уже назначенную параллель (чтобы один учитель вёл одну параллель)
+      if (teacherGrades[teacher.id].has(task.grade)) {
+        score += 80;
+      }
+      
+      // Бонус за уже назначенную предметную область
+      if (teacherAreas[teacher.id].has(task.subjectArea)) {
+        score += 40;
+      }
+      
+      // Штраф за большое количество параллелей (стараемся не размазывать)
+      score -= teacherGrades[teacher.id].size * 15;
+      
+      // Бонус для учителей, которые ещё не набрали минимум часов
+      if (teacherHours[teacher.id] < teacher.minHours) {
+        score += 60;
+      }
+      
+      // Предпочтение менее загруженным учителям (но не слишком сильно)
+      const loadRatio = teacher.maxHours > 0 ? teacherHours[teacher.id] / teacher.maxHours : 1;
+      score -= loadRatio * 30;
+      
+      return score;
+    };
+
+    // Распределяем задачи
+    tasks.forEach(task => {
+      const suitableTeachers = teachers
+        .filter(t => t.subjects.includes(task.subjectName))
+        .filter(t => teacherHours[t.id] + task.hours <= t.maxHours)
+        .map(t => ({ teacher: t, score: calculateTeacherScore(t, task) }))
+        .sort((a, b) => b.score - a.score); // Сортируем по убыванию score
+
+      if (suitableTeachers.length > 0) {
+        const { teacher } = suitableTeachers[0];
+        newAssignments.push({
+          id: crypto.randomUUID(),
+          teacherId: teacher.id,
+          subjectId: task.subjectId,
+          classId: task.classId,
+          hoursPerWeek: task.hours,
+          isGroup: task.groupNumber !== undefined,
+          groupNumber: task.groupNumber,
+        });
+        teacherHours[teacher.id] += task.hours;
+        teacherGrades[teacher.id].add(task.grade);
+        teacherAreas[teacher.id].add(task.subjectArea);
+      }
     });
 
     setLoadAssignments(newAssignments);
@@ -367,9 +433,10 @@ export default function Distribution() {
               </DialogHeader>
               <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground py-4">
                 <li>Специализации учителей (какие предметы могут вести)</li>
-                <li>Максимальной нагрузки учителей</li>
+                <li>Минимальной и максимальной нагрузки учителей</li>
                 <li>Приоритета штатных сотрудников над совместителями</li>
-                <li>Равномерного распределения между учителями</li>
+                <li>Группировки классов одной параллели у одного учителя</li>
+                <li>Группировки предметов одной области у одного учителя</li>
               </ul>
               <Alert variant="destructive">
                 <AlertCircle className="h-4 w-4" />
@@ -531,7 +598,7 @@ export default function Distribution() {
                         <div>
                           <span className="font-medium">{tl.teacherName}</span>
                           <span className="text-muted-foreground text-sm ml-2">
-                            (ставка: {tl.rate})
+                            (мин: {tl.minHours} ч.)
                           </span>
                         </div>
                         <div className="flex items-center gap-2">
