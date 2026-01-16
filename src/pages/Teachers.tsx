@@ -36,7 +36,7 @@ const emptyTeacher: Omit<Teacher, 'id'> = {
   position: "Учитель",
   qualification: "без категории",
   subjects: [],
-  rate: 1,
+  minHours: 0,
   maxHours: 18,
   status: "штатный",
 };
@@ -62,7 +62,7 @@ export default function Teachers() {
         position: teacher.position,
         qualification: teacher.qualification,
         subjects: teacher.subjects,
-        rate: teacher.rate,
+        minHours: teacher.minHours,
         maxHours: teacher.maxHours,
         status: teacher.status,
       });
@@ -203,25 +203,15 @@ export default function Teachers() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="rate">Ставка</Label>
-                  <Select 
-                    value={formData.rate.toString()} 
-                    onValueChange={(value) => 
-                      setFormData(prev => ({ ...prev, rate: parseFloat(value) }))
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="0.25">0.25 ставки</SelectItem>
-                      <SelectItem value="0.5">0.5 ставки</SelectItem>
-                      <SelectItem value="0.75">0.75 ставки</SelectItem>
-                      <SelectItem value="1">1 ставка</SelectItem>
-                      <SelectItem value="1.25">1.25 ставки</SelectItem>
-                      <SelectItem value="1.5">1.5 ставки</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Label htmlFor="minHours">Мин. часов в неделю</Label>
+                  <Input
+                    id="minHours"
+                    type="number"
+                    value={formData.minHours}
+                    onChange={(e) => setFormData(prev => ({ ...prev, minHours: parseInt(e.target.value) || 0 }))}
+                    min={0}
+                    max={40}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="maxHours">Макс. часов в неделю</Label>
@@ -317,7 +307,7 @@ export default function Teachers() {
               <TableHead>Должность</TableHead>
               <TableHead>Квалификация</TableHead>
               <TableHead>Предметы</TableHead>
-              <TableHead>Ставка</TableHead>
+              <TableHead>Мин. часов</TableHead>
               <TableHead>Макс. часов</TableHead>
               <TableHead>Статус</TableHead>
               <TableHead className="w-[100px]">Действия</TableHead>
@@ -357,7 +347,7 @@ export default function Teachers() {
                       )}
                     </div>
                   </TableCell>
-                  <TableCell>{teacher.rate}</TableCell>
+                  <TableCell>{teacher.minHours} ч.</TableCell>
                   <TableCell>{teacher.maxHours} ч.</TableCell>
                   <TableCell>
                     <Badge variant="secondary" className={getStatusColor(teacher.status)}>
