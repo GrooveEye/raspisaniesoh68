@@ -16,14 +16,13 @@ export interface SchoolClass {
   grade: number; // 1-11
   letter: string; // А, Б, В...
   studentCount: number;
-  profile: 'общеобразовательный' | 'гуманитарный' | 'технический' | 'естественнонаучный';
+  profile: 'общеобразовательный' | 'гуманитарный' | 'социально-экономический' | 'технологический' | 'естественно-научный' | 'универсальный';
 }
 
 export interface Subject {
   id: string;
   name: string;
   area: string; // предметная область
-  hoursPerWeek: Record<number, number>; // часы по параллелям: { 1: 4, 2: 4, ... }
   requiresGroupSplit: boolean; // деление на группы
   groupSplitThreshold?: number; // порог для деления (кол-во учеников)
 }
