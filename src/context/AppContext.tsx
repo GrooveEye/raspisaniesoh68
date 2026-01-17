@@ -50,6 +50,7 @@ interface AppContextType {
   addExtracurricularAssignment: (assignment: ExtracurricularAssignment) => void;
   updateExtracurricularAssignment: (id: string, assignment: Partial<ExtracurricularAssignment>) => void;
   deleteExtracurricularAssignment: (id: string) => void;
+  setExtracurricularAssignments: (assignments: ExtracurricularAssignment[]) => void;
   
   // Методы для учебного плана
   setCurriculumHours: (subjectId: string, classId: string, hours: number) => void;
@@ -162,6 +163,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setExtracurricularAssignments(prev => prev.filter(a => a.id !== id));
   };
 
+  const setExtracurricularAssignmentsData = (assignments: ExtracurricularAssignment[]) => {
+    setExtracurricularAssignments(assignments);
+  };
+
   // Учебный план
   const setCurriculumHours = (subjectId: string, classId: string, hours: number) => {
     const key = `${subjectId}_${classId}`;
@@ -235,6 +240,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     addExtracurricularAssignment,
     updateExtracurricularAssignment,
     deleteExtracurricularAssignment,
+    setExtracurricularAssignments: setExtracurricularAssignmentsData,
     curriculumPlan,
     setCurriculumHours,
     getCurriculumHours,

@@ -17,6 +17,7 @@ export interface SchoolClass {
   letter: string; // А, Б, В...
   studentCount: number;
   profile: 'общеобразовательный' | 'гуманитарный' | 'социально-экономический' | 'технологический' | 'естественно-научный' | 'универсальный';
+  classTeacherId?: string; // ID классного руководителя
 }
 
 export interface Subject {
@@ -34,6 +35,7 @@ export interface Extracurricular {
   hoursPerWeek: number;
   targetGrades: number[]; // для каких параллелей
   maxStudents?: number;
+  isClassTeacherLed?: boolean; // ведёт классный руководитель (для каждого класса свой учитель)
 }
 
 export interface LoadAssignment {
@@ -50,7 +52,7 @@ export interface ExtracurricularAssignment {
   id: string;
   teacherId: string;
   extracurricularId: string;
-  classIds: string[];
+  targetGrades: number[]; // для каких параллелей (информационно)
   hoursPerWeek: number;
 }
 

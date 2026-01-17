@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Pencil, Trash2, Search } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, UserCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -36,13 +36,14 @@ const emptyClass: Omit<SchoolClass, 'id'> = {
   letter: "А",
   studentCount: 25,
   profile: "общеобразовательный",
+  classTeacherId: undefined,
 };
 
 const grades = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
 const letters = ["А", "Б", "В", "Г", "Д", "Е", "Ж", "З"];
 
 export default function Classes() {
-  const { classes, addClass, updateClass, deleteClass } = useApp();
+  const { classes, addClass, updateClass, deleteClass, teachers } = useApp();
   const [searchQuery, setSearchQuery] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingClass, setEditingClass] = useState<SchoolClass | null>(null);
@@ -63,6 +64,7 @@ export default function Classes() {
         letter: schoolClass.letter,
         studentCount: schoolClass.studentCount,
         profile: schoolClass.profile,
+        classTeacherId: schoolClass.classTeacherId,
       });
     } else {
       setEditingClass(null);
@@ -97,6 +99,12 @@ export default function Classes() {
     if (grade <= 4) return 'Начальное';
     if (grade <= 9) return 'Основное';
     return 'Среднее';
+  };
+
+  const getClassTeacherName = (classTeacherId?: string) => {
+    if (!classTeacherId) return null;
+    const teacher = teachers.find(t => t.id === classTeacherId);
+    return teacher?.fullName || null;
   };
 
   // Группировка по параллелям
@@ -203,6 +211,28 @@ export default function Classes() {
                   </SelectContent>
                 </Select>
               </div>
+
+              <div className="space-y-2">
+                <Label>Классный руководитель</Label>
+                <Select 
+                  value={formData.classTeacherId || "_none_"} 
+                  onValueChange={(value) => 
+                    setFormData(prev => ({ ...prev, classTeacherId: value === "_none_" ? undefined : value }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Не назначен" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none_">Не назначен</SelectItem>
+                    {teachers.map(teacher => (
+                      <SelectItem key={teacher.id} value={teacher.id}>
+                        {teacher.fullName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
@@ -239,13 +269,14 @@ export default function Classes() {
               <TableHead>Ступень</TableHead>
               <TableHead>Количество учеников</TableHead>
               <TableHead>Профиль</TableHead>
+              <TableHead>Классный руководитель</TableHead>
               <TableHead className="w-[100px]">Действия</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filteredClasses.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                   {classes.length === 0 
                     ? "Нет добавленных классов. Нажмите «Добавить класс» для начала."
                     : "Ничего не найдено"
@@ -268,6 +299,16 @@ export default function Classes() {
                     <Badge variant="secondary" className={getProfileColor(cls.profile)}>
                       {cls.profile}
                     </Badge>
+                  </TableCell>
+                  <TableCell>
+                    {getClassTeacherName(cls.classTeacherId) ? (
+                      <div className="flex items-center gap-1">
+                        <UserCheck className="h-4 w-4 text-green-600" />
+                        <span className="text-sm">{getClassTeacherName(cls.classTeacherId)}</span>
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground text-sm">Не назначен</span>
+                    )}
                   </TableCell>
                   <TableCell>
                     <div className="flex gap-1">
