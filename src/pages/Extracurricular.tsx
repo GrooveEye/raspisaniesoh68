@@ -80,7 +80,7 @@ export default function ExtracurricularPage() {
   const [selectedExtracurricular, setSelectedExtracurricular] = useState<string>('');
   const [selectedTeacher, setSelectedTeacher] = useState<string>('');
   const [selectedAssignGrades, setSelectedAssignGrades] = useState<number[]>([]);
-
+  const [assignHours, setAssignHours] = useState<number>(1);
   const filteredItems = extracurriculars.filter(item =>
     item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     item.direction.toLowerCase().includes(searchQuery.toLowerCase())
@@ -198,12 +198,14 @@ export default function ExtracurricularPage() {
     setSelectedExtracurricular(extracurricularId || '');
     setSelectedTeacher('');
     setSelectedAssignGrades([]);
+    const ext = extracurricularId ? extracurriculars.find(e => e.id === extracurricularId) : null;
+    setAssignHours(ext?.hoursPerWeek || 1);
     setIsAssignDialogOpen(true);
   };
 
   const handleAssign = () => {
-    if (!selectedExtracurricular || !selectedTeacher) {
-      toast.error('Выберите курс и учителя');
+    if (!selectedExtracurricular || !selectedTeacher || assignHours <= 0) {
+      toast.error('Заполните все поля');
       return;
     }
 
@@ -215,10 +217,11 @@ export default function ExtracurricularPage() {
       teacherId: selectedTeacher,
       extracurricularId: selectedExtracurricular,
       targetGrades: selectedAssignGrades.length > 0 ? selectedAssignGrades : extracurricular.targetGrades,
-      hoursPerWeek: extracurricular.hoursPerWeek,
+      hoursPerWeek: assignHours,
     });
 
     setIsAssignDialogOpen(false);
+    setAssignHours(1);
     toast.success('Назначение добавлено');
   };
 
@@ -283,7 +286,10 @@ export default function ExtracurricularPage() {
                   <Select value={selectedExtracurricular} onValueChange={(v) => {
                     setSelectedExtracurricular(v);
                     const ext = extracurriculars.find(e => e.id === v);
-                    if (ext) setSelectedAssignGrades(ext.targetGrades);
+                    if (ext) {
+                      setSelectedAssignGrades(ext.targetGrades);
+                      setAssignHours(ext.hoursPerWeek);
+                    }
                   }}>
                     <SelectTrigger>
                       <SelectValue placeholder="Выберите курс" />
@@ -291,11 +297,27 @@ export default function ExtracurricularPage() {
                     <SelectContent>
                       {extracurriculars.filter(e => !e.isClassTeacherLed).map(e => (
                         <SelectItem key={e.id} value={e.id}>
-                          {e.name} ({e.hoursPerWeek} ч/нед)
+                          {e.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="assignHours">Часов в неделю *</Label>
+                  <Input
+                    id="assignHours"
+                    type="number"
+                    value={assignHours}
+                    onChange={(e) => setAssignHours(parseInt(e.target.value) || 1)}
+                    min={1}
+                    max={20}
+                    placeholder="Укажите кол-во часов"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Например: 3 часа = 1 час на 9-е + 1 час на 10-е + 1 час на 11-е классы
+                  </p>
                 </div>
 
                 <div className="space-y-2">
