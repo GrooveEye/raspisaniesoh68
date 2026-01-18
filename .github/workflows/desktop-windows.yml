@@ -35,6 +35,9 @@ jobs:
       - name: Install WiX (for MSI)
         run: choco install wixtoolset -y
 
+      - name: Install Electron tooling (dev-only)
+        run: npm install -D --no-audit --no-fund electron@40.0.0 electron-builder@26.4.0
+
       - name: Build Electron (NSIS + MSI)
         # Disable auto-publish to GitHub Releases; we only upload artifacts below.
         run: npx electron-builder --config electron-builder.yml --win --publish never
