@@ -9,6 +9,9 @@ export default defineConfig(({ mode }) => {
   const isDev = mode === "development";
 
   return {
+    // Important for Electron builds (file://) so assets resolve correctly.
+    // Also works for web deployment.
+    base: "./",
     server: {
       host: "::",
       port: 8080,

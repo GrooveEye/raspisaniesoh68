@@ -19,7 +19,7 @@ function createWindow() {
 
   if (isDev) {
     // Vite dev server
-    win.loadURL("http://localhost:5173");
+    win.loadURL("http://localhost:8080");
     win.webContents.openDevTools({ mode: "detach" });
   } else {
     // Load compiled Vite output
