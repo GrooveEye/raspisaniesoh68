@@ -1,7 +1,12 @@
+import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
 import { usePwaInstallPrompt } from "@/hooks/usePwaInstallPrompt";
+import { Copy, Link as LinkIcon } from "lucide-react";
+import { QRCodeCanvas } from "qrcode.react";
+
 
 function isIOS() {
   if (typeof navigator === "undefined") return false;
@@ -22,6 +27,26 @@ export default function Install() {
   const ios = isIOS();
   const standalone = isStandaloneMode();
 
+  const installUrl = typeof window !== "undefined" ? `${window.location.origin}/install` : "/install";
+
+  const { qrBg, qrFg } = useMemo(() => {
+    if (typeof window === "undefined") return { qrBg: "#ffffff", qrFg: "#0b0b0c" };
+
+    const root = document.documentElement;
+    const styles = getComputedStyle(root);
+
+    const bg = styles.getPropertyValue("--background").trim();
+    const fg = styles.getPropertyValue("--foreground").trim();
+
+    // Our theme tokens are stored as: "H S% L%" (without the hsl() wrapper)
+    const toHsl = (v: string, fallback: string) => (v ? `hsl(${v})` : fallback);
+
+    return {
+      qrBg: toHsl(bg, "#ffffff"),
+      qrFg: toHsl(fg, "#0b0b0c"),
+    };
+  }, []);
+
   return (
     <div className="mx-auto w-full max-w-3xl space-y-6">
       <header className="space-y-2">
@@ -30,6 +55,53 @@ export default function Install() {
           Можно установить как отдельное приложение на Windows, Android и iOS — без магазинов и без EXE.
         </p>
       </header>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Ссылка для установки</CardTitle>
+          <CardDescription>Откройте на телефоне по QR-коду или скопируйте ссылку.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-start">
+          <div className="space-y-2">
+            <div className="relative">
+              <LinkIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input value={installUrl} readOnly className="pl-9" aria-label="Ссылка для установки" />
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              className="gap-2"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(installUrl);
+                  toast({ title: "Ссылка скопирована", description: "Теперь можно отправить в мессенджер или открыть на телефоне." });
+                } catch {
+                  toast({
+                    title: "Не удалось скопировать автоматически",
+                    description: "Выделите ссылку и скопируйте вручную (Ctrl+C / ⌘C).",
+                    variant: "destructive",
+                  });
+                }
+              }}
+            >
+              <Copy className="h-4 w-4" />
+              Скопировать
+            </Button>
+          </div>
+
+          <div className="flex justify-center sm:justify-end">
+            <div className="rounded-lg border bg-background p-3">
+              <QRCodeCanvas
+                value={installUrl}
+                size={160}
+                includeMargin
+                bgColor={qrBg}
+                fgColor={qrFg}
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
