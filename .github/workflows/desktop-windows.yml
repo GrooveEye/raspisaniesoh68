@@ -6,6 +6,15 @@ on:
     tags:
       - "v*"
 
+# Needed only if you ever enable publishing to Releases.
+# (Safe to keep even when we only upload artifacts.)
+permissions:
+  contents: write
+
+actions:
+  # Prevent duplicate runs when re-triggering manually
+  cancel-in-progress: false
+
 jobs:
   build-windows:
     runs-on: windows-latest
@@ -30,9 +39,8 @@ jobs:
         run: choco install wixtoolset -y
 
       - name: Build Electron (NSIS + MSI)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx electron-builder --config electron-builder.yml --win
+        # Disable auto-publish to GitHub Releases; we only upload artifacts below.
+        run: npx electron-builder --config electron-builder.yml --win --publish never
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
