@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -27,7 +27,28 @@ export default function Install() {
   const ios = isIOS();
   const standalone = isStandaloneMode();
 
+  const [wasEverInstallable, setWasEverInstallable] = useState(false);
+
   const installUrl = typeof window !== "undefined" ? `${window.location.origin}/install` : "/install";
+
+  const isChromeLike = useMemo(() => {
+    if (typeof navigator === "undefined") return false;
+    // Covers Chrome, Edge, Chromium-based browsers
+    return /Chrome|Chromium|Edg\//.test(navigator.userAgent);
+  }, []);
+
+  useEffect(() => {
+    if (isInstallable) setWasEverInstallable(true);
+  }, [isInstallable]);
+
+  useEffect(() => {
+    const onInstalled = () => {
+      toast({ title: "Готово", description: "Приложение установлено." });
+    };
+
+    window.addEventListener("appinstalled", onInstalled);
+    return () => window.removeEventListener("appinstalled", onInstalled);
+  }, [toast]);
 
   const { qrBg, qrFg } = useMemo(() => {
     if (typeof window === "undefined") return { qrBg: "#ffffff", qrFg: "#0b0b0c" };
@@ -109,24 +130,64 @@ export default function Install() {
           <CardDescription>Если браузер поддерживает установку, кнопка будет активна.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          <Button
-            disabled={!isInstallable || standalone}
-            onClick={async () => {
-              const res = await promptInstall();
-              if (res?.outcome === "accepted") {
-                toast({ title: "Установка запущена", description: "Следуйте подсказкам браузера." });
-              }
-            }}
-          >
-            Установить приложение
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              disabled={!isInstallable || standalone}
+              onClick={async () => {
+                const res = await promptInstall();
+                if (res?.outcome === "accepted") {
+                  toast({ title: "Установка запущена", description: "Следуйте подсказкам браузера." });
+                } else {
+                  toast({ title: "Установка не запущена", description: "Если окно не появилось — используйте меню браузера ниже." });
+                }
+              }}
+            >
+              Установить приложение
+            </Button>
+
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => window.location.reload()}
+              aria-label="Обновить страницу установки"
+            >
+              Обновить страницу
+            </Button>
+          </div>
+
           {standalone && (
             <p className="text-sm text-muted-foreground">Похоже, приложение уже открыто в установленном режиме.</p>
           )}
+
           {ios && (
             <p className="text-sm text-muted-foreground">
               На iPhone/iPad кнопка установки обычно не появляется — используйте инструкцию ниже.
             </p>
+          )}
+
+          {!standalone && !ios && !isInstallable && (
+            <div className="space-y-1 text-sm text-muted-foreground">
+              <p>
+                Кнопка может быть неактивна — в Chrome/Edge событие установки появляется не всегда. Установите через интерфейс
+                браузера:
+              </p>
+              <ul className="list-disc space-y-1 pl-5">
+                <li>на ПК: значок «Установить» справа в адресной строке или меню ⋮ → «Установить приложение»</li>
+                <li>на Android: меню ⋮ → «Установить приложение» / «Добавить на главный экран»</li>
+              </ul>
+              {wasEverInstallable && (
+                <p>
+                  Ранее установка была доступна, но сейчас браузер её не предлагает — попробуйте обновить страницу или открыть
+                  опубликованную версию сайта.
+                </p>
+              )}
+              {isChromeLike && (
+                <p>
+                  Важно: установка работает только при открытии сайта по HTTPS и когда установлены требования PWA (иконки,
+                  манифест, service worker).
+                </p>
+              )}
+            </div>
           )}
         </CardContent>
       </Card>
