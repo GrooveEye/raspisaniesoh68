@@ -299,37 +299,50 @@ export default function Distribution() {
     });
 
     // ===== РАСПРЕДЕЛЕНИЕ ВНЕУРОЧКИ (обычные курсы) =====
-    const regularExtracurriculars = extracurriculars.filter(e => !e.isClassTeacherLed);
-    
-    regularExtracurriculars.forEach(ext => {
-      // Находим учителя с наименьшей нагрузкой, который может вести внеурочку
-      const suitableTeachers = teachers
-        .filter(t => teacherHours[t.id] + ext.hoursPerWeek <= t.maxHours)
-        .sort((a, b) => {
-          // Приоритет учителям, которые ведут похожие предметы (хотя бы один)
-          // или которые недогружены
-          const aScore = teacherHours[a.id] < a.minHours ? 100 : 0;
-          const bScore = teacherHours[b.id] < b.minHours ? 100 : 0;
-          
-          const statusOrder = { 'штатный': 50, 'внутренний совместитель': 25, 'внешний совместитель': 0 };
-          const aStatusScore = statusOrder[a.status];
-          const bStatusScore = statusOrder[b.status];
-          
-          return (bScore + bStatusScore) - (aScore + aStatusScore);
-        });
-      
-      if (suitableTeachers.length > 0) {
-        const teacher = suitableTeachers[0];
-        newExtracurricularAssignments.push({
-          id: crypto.randomUUID(),
-          teacherId: teacher.id,
-          extracurricularId: ext.id,
-          targetGrades: ext.targetGrades,
-          hoursPerWeek: ext.hoursPerWeek,
-        });
-        teacherHours[teacher.id] += ext.hoursPerWeek;
+    // Сначала добавляем существующие ручные назначения внеурочки и учитываем их часы
+    extracurricularAssignments.forEach(assignment => {
+      const ext = extracurriculars.find(e => e.id === assignment.extracurricularId);
+      if (ext && !ext.isClassTeacherLed) {
+        // Это существующее ручное назначение — сохраняем его
+        newExtracurricularAssignments.push(assignment);
+        teacherHours[assignment.teacherId] = (teacherHours[assignment.teacherId] || 0) + assignment.hoursPerWeek;
       }
     });
+
+    // Находим внеурочки без назначений и назначаем автоматически
+    const regularExtracurriculars = extracurriculars.filter(e => !e.isClassTeacherLed);
+    const assignedExtracurricularIds = new Set(extracurricularAssignments.map(a => a.extracurricularId));
+    
+    regularExtracurriculars
+      .filter(ext => !assignedExtracurricularIds.has(ext.id))
+      .forEach(ext => {
+        // Находим учителя с наименьшей нагрузкой, который может вести внеурочку
+        const suitableTeachers = teachers
+          .filter(t => teacherHours[t.id] + ext.hoursPerWeek <= t.maxHours)
+          .sort((a, b) => {
+            // Приоритет учителям, которые недогружены
+            const aScore = teacherHours[a.id] < a.minHours ? 100 : 0;
+            const bScore = teacherHours[b.id] < b.minHours ? 100 : 0;
+            
+            const statusOrder = { 'штатный': 50, 'внутренний совместитель': 25, 'внешний совместитель': 0 };
+            const aStatusScore = statusOrder[a.status];
+            const bStatusScore = statusOrder[b.status];
+            
+            return (bScore + bStatusScore) - (aScore + aStatusScore);
+          });
+        
+        if (suitableTeachers.length > 0) {
+          const teacher = suitableTeachers[0];
+          newExtracurricularAssignments.push({
+            id: crypto.randomUUID(),
+            teacherId: teacher.id,
+            extracurricularId: ext.id,
+            targetGrades: ext.targetGrades,
+            hoursPerWeek: ext.hoursPerWeek,
+          });
+          teacherHours[teacher.id] += ext.hoursPerWeek;
+        }
+      });
 
     setLoadAssignments(newAssignments);
     setExtracurricularAssignments(newExtracurricularAssignments);
