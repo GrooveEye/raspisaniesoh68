@@ -1,0 +1,32 @@
+# electron-builder configuration (no package.json edits required)
+# Docs: https://www.electron.build/configuration/configuration
+
+appId: app.schoolplanner.desktop
+productName: School Planner 2026
+
+# electron-builder will override package.json fields during CI/build
+extraMetadata:
+  main: electron/main.cjs
+
+files:
+  - dist/**
+  - electron/**
+
+directories:
+  output: release
+
+asar: true
+
+win:
+  target:
+    - nsis
+    - msi
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+
+publish:
+  - provider: github
+    releaseType: draft
