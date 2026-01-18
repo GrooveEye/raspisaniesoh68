@@ -11,10 +11,6 @@ on:
 permissions:
   contents: write
 
-actions:
-  # Prevent duplicate runs when re-triggering manually
-  cancel-in-progress: false
-
 jobs:
   build-windows:
     runs-on: windows-latest
