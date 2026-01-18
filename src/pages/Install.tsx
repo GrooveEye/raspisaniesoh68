@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
 import { usePwaInstallPrompt } from "@/hooks/usePwaInstallPrompt";
-import { Copy, Link as LinkIcon } from "lucide-react";
+import { Copy, ExternalLink, Link as LinkIcon } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
 
 
@@ -30,6 +30,16 @@ export default function Install() {
   const [wasEverInstallable, setWasEverInstallable] = useState(false);
 
   const installUrl = typeof window !== "undefined" ? `${window.location.origin}/install` : "/install";
+
+  const publishedInstallUrl = "https://schoolplanner2026.lovable.app/install";
+
+  const isPreviewHost = useMemo(() => {
+    if (typeof window === "undefined") return false;
+    const h = window.location.host;
+    return h.includes("lovableproject.com") || h.includes("id-preview");
+  }, []);
+
+  const effectiveInstallUrl = isPreviewHost ? publishedInstallUrl : installUrl;
 
   const isChromeLike = useMemo(() => {
     if (typeof navigator === "undefined") return false;
@@ -77,6 +87,50 @@ export default function Install() {
         </p>
       </header>
 
+      {isPreviewHost && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Вы открыли предпросмотр</CardTitle>
+            <CardDescription>
+              Для установки (и чтобы открывалось в Edge) лучше использовать опубликованную ссылку.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex flex-wrap gap-2">
+              <Button asChild className="gap-2">
+                <a href={publishedInstallUrl} target="_blank" rel="noreferrer">
+                  <ExternalLink className="h-4 w-4" />
+                  Открыть опубликованную
+                </a>
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                className="gap-2"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(publishedInstallUrl);
+                    toast({ title: "Ссылка скопирована", description: "Откройте её в Edge/Chrome и установите приложение." });
+                  } catch {
+                    toast({
+                      title: "Не удалось скопировать автоматически",
+                      description: "Выделите ссылку и скопируйте вручную (Ctrl+C / ⌘C).",
+                      variant: "destructive",
+                    });
+                  }
+                }}
+              >
+                <Copy className="h-4 w-4" />
+                Скопировать опубликованную
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Сейчас QR и кнопка «Скопировать» ниже будут вести на опубликованный адрес.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle>Ссылка для установки</CardTitle>
@@ -86,7 +140,7 @@ export default function Install() {
           <div className="space-y-2">
             <div className="relative">
               <LinkIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input value={installUrl} readOnly className="pl-9" aria-label="Ссылка для установки" />
+              <Input value={effectiveInstallUrl} readOnly className="pl-9" aria-label="Ссылка для установки" />
             </div>
             <Button
               type="button"
@@ -94,7 +148,7 @@ export default function Install() {
               className="gap-2"
               onClick={async () => {
                 try {
-                  await navigator.clipboard.writeText(installUrl);
+                  await navigator.clipboard.writeText(effectiveInstallUrl);
                   toast({ title: "Ссылка скопирована", description: "Теперь можно отправить в мессенджер или открыть на телефоне." });
                 } catch {
                   toast({
@@ -112,13 +166,7 @@ export default function Install() {
 
           <div className="flex justify-center sm:justify-end">
             <div className="rounded-lg border bg-background p-3">
-              <QRCodeCanvas
-                value={installUrl}
-                size={160}
-                includeMargin
-                bgColor={qrBg}
-                fgColor={qrFg}
-              />
+              <QRCodeCanvas value={effectiveInstallUrl} size={160} includeMargin bgColor={qrBg} fgColor={qrFg} />
             </div>
           </div>
         </CardContent>
