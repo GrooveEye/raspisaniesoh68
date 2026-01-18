@@ -1,13 +1,14 @@
-import { 
-  Users, 
-  GraduationCap, 
-  BookOpen, 
-  Palette, 
-  Calendar, 
-  BarChart3, 
+import {
+  Users,
+  GraduationCap,
+  BookOpen,
+  Palette,
+  Calendar,
+  BarChart3,
   FileSpreadsheet,
   Settings,
-  Home
+  Home,
+  Download,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -26,9 +27,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 
-const mainMenuItems = [
-  { title: "Главная", url: "/", icon: Home },
-];
+const mainMenuItems = [{ title: "Главная", url: "/", icon: Home }];
 
 const referenceItems = [
   { title: "Учителя", url: "/teachers", icon: Users },
@@ -44,6 +43,7 @@ const planningItems = [
 
 const toolsItems = [
   { title: "Импорт/Экспорт", url: "/import-export", icon: FileSpreadsheet },
+  { title: "Установка", url: "/install", icon: Download },
   { title: "Настройки", url: "/settings", icon: Settings },
 ];
 
