@@ -13,6 +13,7 @@ import Extracurricular from "./pages/Extracurricular";
 import Curriculum from "./pages/Curriculum";
 import Distribution from "./pages/Distribution";
 import ImportExport from "./pages/ImportExport";
+import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -34,6 +35,7 @@ const App = () => (
               <Route path="/curriculum" element={<Curriculum />} />
               <Route path="/distribution" element={<Distribution />} />
               <Route path="/import-export" element={<ImportExport />} />
+              <Route path="/settings" element={<Settings />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </AppLayout>
