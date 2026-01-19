@@ -154,6 +154,17 @@ export default function Distribution() {
     const teacherGrades: Record<string, Set<number>> = {};
     const teacherAreas: Record<string, Set<string>> = {};
 
+    const subjectById = new Map(subjects.map((s) => [s.id, s] as const));
+    const classById = new Map(classes.map((c) => [c.id, c] as const));
+
+    // Сколько уже назначено по каждой связке (класс+предмет+группа)
+    const assignedByTaskKey = new Map<string, number>();
+    // Если это НЕ группа, то учителя считаем «закреплённым» для этой пары класс+предмет
+    const lockedTeacherByTaskKey = new Map<string, string>();
+
+    const getTaskKey = (classId: string, subjectId: string, groupNumber?: number) =>
+      `${classId}__${subjectId}__${groupNumber ?? 0}`;
+
     teachers.forEach((t) => {
       teacherHours[t.id] = 0;
       teacherGrades[t.id] = new Set();
@@ -161,6 +172,24 @@ export default function Distribution() {
 
       const ctHours = getClassTeacherExtracurricularHours(t.id);
       teacherHours[t.id] += ctHours.reduce((sum, h) => sum + h.hours, 0);
+    });
+
+    // Ручные назначения НЕ трогаем: переносим их в новый список и учитываем в нагрузке,
+    // а автораспределение закрывает только оставшиеся «дыры».
+    loadAssignments.forEach((a) => {
+      newAssignments.push(a);
+
+      const subj = subjectById.get(a.subjectId);
+      const cls = classById.get(a.classId);
+      if (!subj || !cls) return;
+
+      const key = getTaskKey(a.classId, a.subjectId, a.isGroup ? a.groupNumber : undefined);
+      assignedByTaskKey.set(key, (assignedByTaskKey.get(key) ?? 0) + a.hoursPerWeek);
+      if (!a.isGroup) lockedTeacherByTaskKey.set(key, a.teacherId);
+
+      teacherHours[a.teacherId] = (teacherHours[a.teacherId] ?? 0) + a.hoursPerWeek;
+      teacherGrades[a.teacherId].add(cls.grade);
+      teacherAreas[a.teacherId].add(subj.area);
     });
 
     interface DistributionTask {
@@ -171,6 +200,7 @@ export default function Distribution() {
       subjectArea: string;
       hours: number;
       groupNumber?: number;
+      lockedTeacherId?: string;
     }
 
     const tasks: DistributionTask[] = [];
@@ -198,11 +228,37 @@ export default function Distribution() {
       });
     });
 
-    tasks.sort((a, b) => {
-      if (a.subjectArea !== b.subjectArea) return a.subjectArea.localeCompare(b.subjectArea);
-      if (a.subjectId !== b.subjectId) return a.subjectName.localeCompare(b.subjectName);
-      // Сначала обрабатываем старшие классы, чтобы приоритеты 9–11 не «съедались» младшими.
-      return b.grade - a.grade;
+    // Оставляем только «недостающие» часы (с учётом ручных назначений)
+    const remainingTasks: DistributionTask[] = tasks
+      .map((t) => {
+        const key = getTaskKey(t.classId, t.subjectId, t.groupNumber);
+        const already = assignedByTaskKey.get(key) ?? 0;
+        const remaining = t.hours - already;
+        if (remaining <= 0) return null;
+
+        // Если по этой паре (класс+предмет) уже есть ручное НЕ-групповое назначение,
+        // то «доливка» обязана идти тому же учителю (не дробим предмет между учителями).
+        const lockedTeacherId = t.groupNumber === undefined ? lockedTeacherByTaskKey.get(key) : undefined;
+
+        return {
+          ...t,
+          hours: remaining,
+          lockedTeacherId,
+        } as DistributionTask;
+      })
+      .filter(Boolean) as DistributionTask[];
+
+    // Сортировка без привязки к «старшие/младшие»: сначала самые «дефицитные» задачи.
+    remainingTasks.sort((a, b) => {
+      const aCand = a.lockedTeacherId
+        ? 1
+        : teachers.filter((t) => t.subjects.includes(a.subjectName)).length;
+      const bCand = b.lockedTeacherId
+        ? 1
+        : teachers.filter((t) => t.subjects.includes(b.subjectName)).length;
+      if (aCand !== bCand) return aCand - bCand;
+      // затем — более крупные блоки часов
+      return b.hours - a.hours;
     });
 
     const calculateTeacherScore = (teacher: (typeof teachers)[0], task: DistributionTask): number => {
@@ -226,8 +282,8 @@ export default function Distribution() {
       return score;
     };
 
-    tasks.forEach((task) => {
-      const candidates = teachers
+    remainingTasks.forEach((task) => {
+      const candidates = (task.lockedTeacherId ? teachers.filter((t) => t.id === task.lockedTeacherId) : teachers)
         .filter((t) => t.subjects.includes(task.subjectName))
         .filter((t) => teacherHours[t.id] + task.hours <= t.maxHours);
 
