@@ -228,38 +228,93 @@ export default function Distribution() {
     tasks.forEach((task) => {
       const candidates = teachers
         .filter((t) => t.subjects.includes(task.subjectName))
-        .filter((t) => teacherHours[t.id] + task.hours <= t.maxHours);
+        .filter((t) => teacherHours[t.id] + 1 <= t.maxHours); // хотя бы 1 час может взять
 
+      if (candidates.length === 0) return;
+
+      // Ранжируем: кому больше всего не хватает до минимума → затем скоринг
       const ranked = candidates
         .map((t) => {
-          const remainingMin = Math.max(0, t.minHours - (teacherHours[t.id] ?? 0));
+          const current = teacherHours[t.id] ?? 0;
+          const remainingMin = Math.max(0, t.minHours - current);
+          const capacity = Math.max(0, t.maxHours - current);
           return {
             teacher: t,
             remainingMin,
+            capacity,
             score: calculateTeacherScore(t, task),
           };
         })
+        .filter((x) => x.capacity > 0)
         .sort((a, b) => {
-          // 1) Сначала закрываем минимум: кому больше всего не хватает — тот выше
           if (a.remainingMin !== b.remainingMin) return b.remainingMin - a.remainingMin;
-          // 2) Далее — исходный скоринг
           return b.score - a.score;
         });
 
-      if (ranked.length > 0) {
-        const { teacher } = ranked[0];
+      if (ranked.length === 0) return;
+
+      // Если задача НЕ про деление на группы, разрешаем «дробить» часы между учителями,
+      // чтобы закрывать minHours, помечая такие куски как isGroup чтобы не считалось дублем.
+      const canSplitHours = task.groupNumber === undefined;
+
+      let remainingHours = task.hours;
+      let splitIndex = 1;
+
+      const pushChunk = (teacherId: string, hours: number, groupNumber?: number) => {
         newAssignments.push({
           id: crypto.randomUUID(),
-          teacherId: teacher.id,
+          teacherId,
           subjectId: task.subjectId,
           classId: task.classId,
-          hoursPerWeek: task.hours,
-          isGroup: task.groupNumber !== undefined,
-          groupNumber: task.groupNumber,
+          hoursPerWeek: hours,
+          isGroup: groupNumber !== undefined,
+          groupNumber,
         });
-        teacherHours[teacher.id] += task.hours;
-        teacherGrades[teacher.id].add(task.grade);
-        teacherAreas[teacher.id].add(task.subjectArea);
+      };
+
+      if (canSplitHours) {
+        // 1) Сначала пытаемся отдать часы тем, кому не хватает до минимума
+        for (const r of ranked) {
+          if (remainingHours <= 0) break;
+          if (r.remainingMin <= 0) continue;
+
+          const take = Math.min(remainingHours, r.remainingMin, r.capacity);
+          if (take <= 0) continue;
+
+          // искусственная «группа» для обхода дублей
+          pushChunk(r.teacher.id, take, splitIndex);
+          splitIndex += 1;
+
+          teacherHours[r.teacher.id] += take;
+          teacherGrades[r.teacher.id].add(task.grade);
+          teacherAreas[r.teacher.id].add(task.subjectArea);
+
+          remainingHours -= take;
+        }
+
+        // 2) Остаток — лучшему по скорингу/приоритету
+        if (remainingHours > 0) {
+          const r0 = ranked[0];
+          const current = teacherHours[r0.teacher.id] ?? 0;
+          const capacity = Math.max(0, r0.teacher.maxHours - current);
+          const take = Math.min(remainingHours, capacity);
+          if (take > 0) {
+            pushChunk(r0.teacher.id, take, splitIndex);
+            teacherHours[r0.teacher.id] += take;
+            teacherGrades[r0.teacher.id].add(task.grade);
+            teacherAreas[r0.teacher.id].add(task.subjectArea);
+          }
+        }
+      } else {
+        // Группы (1/2) оставляем атомарными, как раньше
+        const eligible = ranked.filter((r) => (teacherHours[r.teacher.id] ?? 0) + remainingHours <= r.teacher.maxHours);
+        const r0 = eligible[0];
+        if (!r0) return;
+
+        pushChunk(r0.teacher.id, remainingHours, task.groupNumber);
+        teacherHours[r0.teacher.id] += remainingHours;
+        teacherGrades[r0.teacher.id].add(task.grade);
+        teacherAreas[r0.teacher.id].add(task.subjectArea);
       }
     });
 
