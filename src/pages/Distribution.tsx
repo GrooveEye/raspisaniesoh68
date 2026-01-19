@@ -230,17 +230,24 @@ export default function Distribution() {
         .filter((t) => t.subjects.includes(task.subjectName))
         .filter((t) => teacherHours[t.id] + task.hours <= t.maxHours);
 
-      // Если есть учителя, которые ещё не набрали минимум, сначала закрываем их минимум.
-      // Это делает minHours «обязательным» в пределах доступных часов/подходящих предметов.
-      const needMin = candidates.filter((t) => teacherHours[t.id] < t.minHours);
-      const pool = needMin.length > 0 ? needMin : candidates;
+      const ranked = candidates
+        .map((t) => {
+          const remainingMin = Math.max(0, t.minHours - (teacherHours[t.id] ?? 0));
+          return {
+            teacher: t,
+            remainingMin,
+            score: calculateTeacherScore(t, task),
+          };
+        })
+        .sort((a, b) => {
+          // 1) Сначала закрываем минимум: кому больше всего не хватает — тот выше
+          if (a.remainingMin !== b.remainingMin) return b.remainingMin - a.remainingMin;
+          // 2) Далее — исходный скоринг
+          return b.score - a.score;
+        });
 
-      const suitableTeachers = pool
-        .map((t) => ({ teacher: t, score: calculateTeacherScore(t, task) }))
-        .sort((a, b) => b.score - a.score);
-
-      if (suitableTeachers.length > 0) {
-        const { teacher } = suitableTeachers[0];
+      if (ranked.length > 0) {
+        const { teacher } = ranked[0];
         newAssignments.push({
           id: crypto.randomUUID(),
           teacherId: teacher.id,
