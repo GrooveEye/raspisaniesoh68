@@ -1,14 +1,20 @@
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
-import type { 
-  Teacher, 
-  SchoolClass, 
-  Subject, 
+import type {
+  Teacher,
+  SchoolClass,
+  Subject,
   Extracurricular,
   LoadAssignment,
   ExtracurricularAssignment,
-  CurriculumPlan 
+  CurriculumPlan
 } from '@/types';
+
+export type CurriculumPlanRow = {
+  subjectName: string;
+  className: string; // например: 9А
+  hoursPerWeek: number;
+};
 
 // === JSON Export/Import ===
 
@@ -289,7 +295,7 @@ export function exportAllToExcel(
   curriculumPlan: CurriculumPlan
 ) {
   const wb = XLSX.utils.book_new();
-  
+
   // Лист учителей
   const teachersData = teachers.map(t => ({
     'ФИО': t.fullName,
@@ -305,7 +311,7 @@ export function exportAllToExcel(
     ws['!cols'] = [{ wch: 35 }, { wch: 20 }, { wch: 15 }, { wch: 40 }, { wch: 12 }, { wch: 12 }, { wch: 25 }];
     XLSX.utils.book_append_sheet(wb, ws, 'Учителя');
   }
-  
+
   // Лист классов
   const classesData = classes.map(c => {
     const classTeacher = teachers.find(t => t.id === c.classTeacherId);
@@ -323,7 +329,7 @@ export function exportAllToExcel(
     ws['!cols'] = [{ wch: 10 }, { wch: 12 }, { wch: 8 }, { wch: 20 }, { wch: 25 }, { wch: 35 }];
     XLSX.utils.book_append_sheet(wb, ws, 'Классы');
   }
-  
+
   // Лист предметов
   const subjectsData = subjects.map(s => ({
     'Название': s.name,
@@ -336,7 +342,7 @@ export function exportAllToExcel(
     ws['!cols'] = [{ wch: 35 }, { wch: 30 }, { wch: 18 }, { wch: 15 }];
     XLSX.utils.book_append_sheet(wb, ws, 'Предметы');
   }
-  
+
   // Лист внеурочки
   const extracurricularsData = extracurriculars.map(e => ({
     'Название': e.name,
@@ -351,8 +357,106 @@ export function exportAllToExcel(
     ws['!cols'] = [{ wch: 40 }, { wch: 20 }, { wch: 15 }, { wch: 20 }, { wch: 15 }, { wch: 20 }];
     XLSX.utils.book_append_sheet(wb, ws, 'Внеурочка');
   }
-  
+
+  // Лист учебного плана (длинный формат: предмет + класс + часы)
+  const planRows = curriculumPlanToRows(subjects, classes, curriculumPlan);
+  if (planRows.length > 0) {
+    const ws = XLSX.utils.json_to_sheet(
+      planRows.map(r => ({
+        'Предмет': r.subjectName,
+        'Класс': r.className,
+        'Часов в неделю': r.hoursPerWeek
+      }))
+    );
+    ws['!cols'] = [{ wch: 35 }, { wch: 10 }, { wch: 14 }];
+    XLSX.utils.book_append_sheet(wb, ws, 'Учебный план');
+  }
+
   XLSX.writeFile(wb, `school-plan-full-${new Date().toISOString().split('T')[0]}.xlsx`);
+}
+
+function curriculumPlanToRows(
+  subjects: Subject[],
+  classes: SchoolClass[],
+  curriculumPlan: CurriculumPlan
+): CurriculumPlanRow[] {
+  const subjectById = new Map(subjects.map(s => [s.id, s] as const));
+  const classById = new Map(classes.map(c => [c.id, c] as const));
+
+  return Object.entries(curriculumPlan)
+    .map(([key, hoursPerWeek]) => {
+      const [subjectId, classId] = key.split('_');
+      const subj = subjectById.get(subjectId);
+      const cls = classById.get(classId);
+      if (!subj || !cls) return null;
+      return {
+        subjectName: subj.name,
+        className: `${cls.grade}${cls.letter}`,
+        hoursPerWeek: Number(hoursPerWeek) || 0,
+      } satisfies CurriculumPlanRow;
+    })
+    .filter((r): r is CurriculumPlanRow => !!r && r.hoursPerWeek > 0)
+    .sort((a, b) => a.className.localeCompare(b.className) || a.subjectName.localeCompare(b.subjectName));
+}
+
+export function exportCurriculumPlanToExcel(subjects: Subject[], classes: SchoolClass[], curriculumPlan: CurriculumPlan) {
+  const rows = curriculumPlanToRows(subjects, classes, curriculumPlan).map(r => ({
+    'Предмет': r.subjectName,
+    'Класс': r.className,
+    'Часов в неделю': r.hoursPerWeek,
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Учебный план');
+  ws['!cols'] = [{ wch: 35 }, { wch: 10 }, { wch: 14 }];
+
+  XLSX.writeFile(wb, `curriculum-plan-${new Date().toISOString().split('T')[0]}.xlsx`);
+}
+
+export function exportCurriculumPlanToCSV(subjects: Subject[], classes: SchoolClass[], curriculumPlan: CurriculumPlan) {
+  const headers = ['Предмет', 'Класс', 'Часов в неделю'];
+  const rows = curriculumPlanToRows(subjects, classes, curriculumPlan).map(r => [
+    r.subjectName,
+    r.className,
+    String(r.hoursPerWeek),
+  ]);
+
+  const escapeCsv = (v: unknown) => String(v).replace(/"/g, '""');
+
+  const csvContent = [headers, ...rows]
+    .map(row => row.map(cell => `"${escapeCsv(cell)}"`).join(','))
+    .join('\n');
+
+  const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8' });
+  saveAs(blob, `curriculum-plan-${new Date().toISOString().split('T')[0]}.csv`);
+}
+
+export function parseCurriculumPlanFromData(data: any[][]): CurriculumPlanRow[] {
+  const rows: CurriculumPlanRow[] = [];
+  const headers = data[0]?.map(h => String(h).toLowerCase().trim()) || [];
+
+  const subjectIndex = headers.findIndex(h => h.includes('предмет') || h.includes('название') || h.includes('subject'));
+  const classIndex = headers.findIndex(h => h === 'класс' || h.includes('class'));
+  const hoursIndex = headers.findIndex(h => h.includes('час'));
+
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    if (!row || row.length === 0) continue;
+
+    const subjectName = row[subjectIndex >= 0 ? subjectIndex : 0]?.toString().trim();
+    const className = row[classIndex >= 0 ? classIndex : 1]?.toString().trim();
+    const hoursRaw = row[hoursIndex >= 0 ? hoursIndex : 2];
+
+    if (!subjectName || !className) continue;
+
+    const hoursPerWeek = Number(hoursRaw);
+    if (!Number.isFinite(hoursPerWeek) || hoursPerWeek <= 0) continue;
+
+    rows.push({ subjectName, className, hoursPerWeek });
+  }
+
+  return rows;
 }
 
 // === CSV Export ===

@@ -45,15 +45,18 @@ import {
   exportClassesToCSV,
   exportSubjectsToCSV,
   exportExtracurricularsToCSV,
+  exportCurriculumPlanToExcel,
+  exportCurriculumPlanToCSV,
   parseExcelFile,
   parseCSVFile,
   parseTeachersFromData,
   parseClassesFromData,
   parseSubjectsFromData,
-  parseExtracurricularsFromData
+  parseExtracurricularsFromData,
+  parseCurriculumPlanFromData
 } from '@/lib/exportUtils';
 
-type ImportType = 'teachers' | 'classes' | 'subjects' | 'extracurriculars' | 'full';
+type ImportType = 'teachers' | 'classes' | 'subjects' | 'extracurriculars' | 'curriculum' | 'full';
 
 interface ImportPreview {
   type: ImportType;
@@ -158,7 +161,7 @@ export default function ImportExport() {
   
   const processTabularData = (data: any[][], fileName: string) => {
     let parsedData: any[] = [];
-    
+
     switch (currentImportType) {
       case 'teachers':
         parsedData = parseTeachersFromData(data);
@@ -172,8 +175,11 @@ export default function ImportExport() {
       case 'extracurriculars':
         parsedData = parseExtracurricularsFromData(data);
         break;
+      case 'curriculum':
+        parsedData = parseCurriculumPlanFromData(data);
+        break;
     }
-    
+
     if (parsedData.length === 0) {
       toast({
         title: 'Нет данных для импорта',
@@ -182,7 +188,7 @@ export default function ImportExport() {
       });
       return;
     }
-    
+
     setImportPreview({
       type: currentImportType,
       data: parsedData,
@@ -192,9 +198,9 @@ export default function ImportExport() {
   
   const confirmImport = async () => {
     if (!importPreview) return;
-    
+
     setIsImporting(true);
-    
+
     try {
       if (importPreview.type === 'full') {
         // Полный импорт из JSON
@@ -203,10 +209,32 @@ export default function ImportExport() {
           title: 'Импорт завершён',
           description: 'Все данные успешно импортированы'
         });
+      } else if (importPreview.type === 'curriculum') {
+        // Импорт учебного плана (предмет + класс + часы)
+        const normalize = (s: string) => s.replace(/\s+/g, '').replace(/[\.\-]/g, '').toLowerCase();
+
+        const subjectByName = new Map(subjects.map(s => [normalize(s.name), s] as const));
+        const classByName = new Map(classes.map(c => [normalize(`${c.grade}${c.letter}`), c] as const));
+
+        const plan: Record<string, number> = {};
+        for (const row of importPreview.data as Array<{ subjectName: string; className: string; hoursPerWeek: number }>) {
+          const subj = subjectByName.get(normalize(row.subjectName));
+          const cls = classByName.get(normalize(row.className));
+          if (!subj || !cls) continue;
+          const key = `${subj.id}_${cls.id}`;
+          plan[key] = Number(row.hoursPerWeek) || 0;
+        }
+
+        importData({ curriculumPlan: plan });
+
+        toast({
+          title: 'Импорт завершён',
+          description: `Добавлено/обновлено ячеек: ${Object.keys(plan).length}`
+        });
       } else {
         // Импорт отдельного типа
         const generateId = () => crypto.randomUUID();
-        
+
         switch (importPreview.type) {
           case 'teachers':
             importPreview.data.forEach(t => addTeacher({ ...t, id: generateId() }));
@@ -221,13 +249,13 @@ export default function ImportExport() {
             importPreview.data.forEach(e => addExtracurricular({ ...e, id: generateId() }));
             break;
         }
-        
+
         toast({
           title: 'Импорт завершён',
           description: `Добавлено записей: ${importPreview.data.length}`
         });
       }
-      
+
       setIsPreviewOpen(false);
       setImportPreview(null);
     } catch (error) {
@@ -370,7 +398,30 @@ export default function ImportExport() {
         </Table>
       );
     }
-    
+
+    if (importPreview.type === 'curriculum') {
+      return (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Предмет</TableHead>
+              <TableHead>Класс</TableHead>
+              <TableHead>Часов/нед</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {data.slice(0, 10).map((r: any, i: number) => (
+              <TableRow key={i}>
+                <TableCell className="font-medium">{r.subjectName}</TableCell>
+                <TableCell>{r.className}</TableCell>
+                <TableCell>{r.hoursPerWeek}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      );
+    }
+
     return null;
   };
   
@@ -578,7 +629,34 @@ export default function ImportExport() {
                 </Button>
               </CardContent>
             </Card>
-            
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <TableIcon className="h-4 w-4" />
+                  Учебный план
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="flex gap-2 flex-wrap">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => exportCurriculumPlanToExcel(subjects, classes, curriculumPlan)}
+                  disabled={Object.keys(curriculumPlan).length === 0}
+                >
+                  <FileSpreadsheet className="mr-1 h-3 w-3" /> Excel
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => exportCurriculumPlanToCSV(subjects, classes, curriculumPlan)}
+                  disabled={Object.keys(curriculumPlan).length === 0}
+                >
+                  <FileText className="mr-1 h-3 w-3" /> CSV
+                </Button>
+              </CardContent>
+            </Card>
+
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">
@@ -705,6 +783,24 @@ export default function ImportExport() {
               </CardHeader>
               <CardContent>
                 <Button variant="outline" onClick={() => handleFileSelect('extracurriculars')}>
+                  <Upload className="mr-2 h-4 w-4" />
+                  Выбрать файл
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <TableIcon className="h-4 w-4" />
+                  Импорт учебного плана
+                </CardTitle>
+                <CardDescription>
+                  Столбцы: Предмет, Класс, Часов в неделю (пример: Алгебра | 9А | 3)
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button variant="outline" onClick={() => handleFileSelect('curriculum')}>
                   <Upload className="mr-2 h-4 w-4" />
                   Выбрать файл
                 </Button>
