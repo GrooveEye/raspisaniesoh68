@@ -145,53 +145,186 @@ export function exportExtracurricularsToExcel(extracurriculars: Extracurricular[
 }
 
 // Экспорт распределения нагрузки в формате как на примере
-export function exportDistributionToExcel(
+
+type DistributionMode = "teacher" | "class" | "subject";
+
+type FlatDistributionRow = {
+  type: "Урок" | "Внеурочка";
+  teacher: string;
+  className: string;
+  subjectOrActivity: string;
+  hours: number;
+  groupLabel?: string;
+};
+
+const THICK_BLACK = { rgb: "FF000000" } as const;
+
+const thickBorder = {
+  top: { style: "thick", color: THICK_BLACK },
+  bottom: { style: "thick", color: THICK_BLACK },
+  left: { style: "thick", color: THICK_BLACK },
+  right: { style: "thick", color: THICK_BLACK },
+} as const;
+
+const setStyle = (ws: XLSX.WorkSheet, r0: number, c0: number, style: any) => {
+  const addr = XLSX.utils.encode_cell({ r: r0, c: c0 });
+  const cell = (ws as any)[addr];
+  if (!cell) return;
+  (ws as any)[addr] = {
+    ...cell,
+    s: {
+      ...(cell.s ?? {}),
+      ...style,
+      font: { ...(cell.s?.font ?? {}), ...(style.font ?? {}) },
+      alignment: { ...(cell.s?.alignment ?? {}), ...(style.alignment ?? {}) },
+      border: { ...(cell.s?.border ?? {}), ...(style.border ?? {}) },
+    },
+  };
+};
+
+const sortClasses = (classes: SchoolClass[]) =>
+  [...classes].sort((a, b) => (a.grade !== b.grade ? a.grade - b.grade : a.letter.localeCompare(b.letter)));
+
+const classLabel = (c: SchoolClass) => `${c.grade}${c.letter}`;
+
+function buildFlatRows(
+  teachers: Teacher[],
+  classes: SchoolClass[],
+  subjects: Subject[],
+  extracurriculars: Extracurricular[],
+  loadAssignments: LoadAssignment[],
+  extracurricularAssignments: ExtracurricularAssignment[],
+  includeClassTeacherLed: boolean
+): FlatDistributionRow[] {
+  const teacherById = new Map(teachers.map((t) => [t.id, t] as const));
+  const classById = new Map(classes.map((c) => [c.id, c] as const));
+  const subjectById = new Map(subjects.map((s) => [s.id, s] as const));
+  const extById = new Map(extracurriculars.map((e) => [e.id, e] as const));
+
+  const rows: FlatDistributionRow[] = [];
+
+  for (const a of loadAssignments) {
+    const t = teacherById.get(a.teacherId);
+    const c = classById.get(a.classId);
+    const s = subjectById.get(a.subjectId);
+    if (!t || !c || !s) continue;
+    rows.push({
+      type: "Урок",
+      teacher: t.fullName,
+      className: classLabel(c),
+      subjectOrActivity: s.name,
+      hours: a.hoursPerWeek,
+      groupLabel: a.isGroup ? `Группа ${a.groupNumber ?? ""}`.trim() : "",
+    });
+  }
+
+  // Внеурочка (обычные назначения)
+  for (const a of extracurricularAssignments) {
+    const t = teacherById.get(a.teacherId);
+    const ext = extById.get(a.extracurricularId);
+    if (!t || !ext) continue;
+    rows.push({
+      type: "Внеурочка",
+      teacher: t.fullName,
+      className: "",
+      subjectOrActivity: ext.name,
+      hours: a.hoursPerWeek,
+    });
+  }
+
+  // Курсы классного руководителя (если нужно)
+  if (includeClassTeacherLed) {
+    const classTeacherCourses = extracurriculars.filter((e) => e.isClassTeacherLed);
+    for (const t of teachers) {
+      const myClasses = classes.filter((c) => c.classTeacherId === t.id);
+      for (const cls of myClasses) {
+        for (const ext of classTeacherCourses) {
+          if (!ext.targetGrades.includes(cls.grade)) continue;
+          rows.push({
+            type: "Внеурочка",
+            teacher: t.fullName,
+            className: classLabel(cls),
+            subjectOrActivity: ext.name,
+            hours: ext.hoursPerWeek,
+          });
+        }
+      }
+    }
+  }
+
+  return rows
+    .filter((r) => r.hours > 0)
+    .sort(
+      (a, b) =>
+        a.teacher.localeCompare(b.teacher, "ru") ||
+        a.type.localeCompare(b.type, "ru") ||
+        a.className.localeCompare(b.className, "ru") ||
+        a.subjectOrActivity.localeCompare(b.subjectOrActivity, "ru")
+    );
+}
+
+function makeFlatSheet(rows: FlatDistributionRow[]): XLSX.WorkSheet {
+  const header = ["Тип", "Учитель", "Класс", "Предмет/Внеурочка", "Группа", "Часы"];
+  const aoa: (string | number)[][] = [header];
+  const rowKinds: Array<"header" | "extra" | "normal"> = ["header"];
+
+  rows.forEach((r) => {
+    aoa.push([
+      r.type,
+      r.teacher,
+      r.className,
+      r.subjectOrActivity,
+      r.groupLabel ?? "",
+      r.hours,
+    ]);
+    rowKinds.push(r.type === "Внеурочка" ? "extra" : "normal");
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws["!cols"] = [{ wch: 12 }, { wch: 32 }, { wch: 10 }, { wch: 44 }, { wch: 12 }, { wch: 10 }];
+
+  const range = XLSX.utils.decode_range(ws["!ref"] as string);
+  for (let c = range.s.c; c <= range.e.c; c++) {
+    setStyle(ws, 0, c, {
+      font: { bold: true },
+      alignment: { horizontal: "center", vertical: "center", wrapText: true },
+      border: thickBorder,
+    });
+  }
+
+  for (let r = 1; r <= range.e.r; r++) {
+    for (let c = 0; c <= range.e.c; c++) {
+      const isTextCol = c <= 4;
+      setStyle(ws, r, c, {
+        alignment: { horizontal: isTextCol ? "left" : "center", vertical: "center", wrapText: true },
+      });
+    }
+    if (rowKinds[r] === "extra") {
+      for (let c = 0; c <= range.e.c; c++) setStyle(ws, r, c, { font: { italic: true } });
+    }
+  }
+
+  return ws;
+}
+
+function makeTeacherMatrixSheet(
   teachers: Teacher[],
   classes: SchoolClass[],
   subjects: Subject[],
   extracurriculars: Extracurricular[],
   loadAssignments: LoadAssignment[],
   extracurricularAssignments: ExtracurricularAssignment[]
-) {
-  const wb = XLSX.utils.book_new();
-
-  const sortedClasses = [...classes].sort((a, b) => {
-    if (a.grade !== b.grade) return a.grade - b.grade;
-    return a.letter.localeCompare(b.letter);
-  });
-  const classNames = sortedClasses.map((c) => `${c.grade}${c.letter}`);
+): XLSX.WorkSheet {
+  const sortedClasses = sortClasses(classes);
+  const classNames = sortedClasses.map(classLabel);
 
   const header = ["Учитель", "Предмет", ...classNames, "Итого"];
   const aoa: (string | number)[][] = [header];
 
-  type RowKind = "header" | "subject" | "extra" | "total" | "blank";
+  type RowKind = "header" | "subject" | "extra" | "total";
   const rowKinds: RowKind[] = ["header"];
 
-  const thickBorder = {
-    top: { style: "thick", color: { rgb: "FF000000" } },
-    bottom: { style: "thick", color: { rgb: "FF000000" } },
-    left: { style: "thick", color: { rgb: "FF000000" } },
-    right: { style: "thick", color: { rgb: "FF000000" } },
-  } as const;
-
-  const setStyle = (ws: XLSX.WorkSheet, r0: number, c0: number, style: any) => {
-    const addr = XLSX.utils.encode_cell({ r: r0, c: c0 });
-    const cell = (ws as any)[addr];
-    if (!cell) return;
-    (ws as any)[addr] = {
-      ...cell,
-      s: {
-        ...(cell.s ?? {}),
-        ...style,
-        font: { ...(cell.s?.font ?? {}), ...(style.font ?? {}) },
-        alignment: { ...(cell.s?.alignment ?? {}), ...(style.alignment ?? {}) },
-        border: { ...(cell.s?.border ?? {}), ...(style.border ?? {}) },
-      },
-    };
-  };
-
   teachers.forEach((teacher) => {
-    // === предметная нагрузка ===
     const teacherLoads = loadAssignments.filter((a) => a.teacherId === teacher.id);
     const subjectGroups = new Map<string, Map<string, number>>();
 
@@ -202,20 +335,18 @@ export function exportDistributionToExcel(
 
       if (!subjectGroups.has(subject.name)) subjectGroups.set(subject.name, new Map());
 
-      const className = `${cls.grade}${cls.letter}`;
-      const current = subjectGroups.get(subject.name)!.get(className) || 0;
-      subjectGroups.get(subject.name)!.set(className, current + load.hoursPerWeek);
+      const clsName = classLabel(cls);
+      const current = subjectGroups.get(subject.name)!.get(clsName) || 0;
+      subjectGroups.get(subject.name)!.set(clsName, current + load.hoursPerWeek);
     });
 
-    // === внеурочка (в конце блока учителя) ===
     const teacherExtras = extracurricularAssignments.filter((a) => a.teacherId === teacher.id);
     const extraGroups = new Map<string, number>();
 
     teacherExtras.forEach((extra) => {
       const ext = extracurriculars.find((e) => e.id === extra.extracurricularId);
       if (!ext) return;
-      const current = extraGroups.get(ext.name) || 0;
-      extraGroups.set(ext.name, current + extra.hoursPerWeek);
+      extraGroups.set(ext.name, (extraGroups.get(ext.name) || 0) + extra.hoursPerWeek);
     });
 
     // Курсы классного руководителя
@@ -225,18 +356,18 @@ export function exportDistributionToExcel(
     myClasses.forEach((cls) => {
       classTeacherExtras.forEach((ext) => {
         if (!ext.targetGrades.includes(cls.grade)) return;
-        const current = extraGroups.get(ext.name) || 0;
-        extraGroups.set(ext.name, current + ext.hoursPerWeek);
+        extraGroups.set(ext.name, (extraGroups.get(ext.name) || 0) + ext.hoursPerWeek);
       });
     });
 
     const subjectEntries = [...subjectGroups.entries()].sort(([a], [b]) => a.localeCompare(b, "ru"));
     const extraEntries = [...extraGroups.entries()].sort(([a], [b]) => a.localeCompare(b, "ru"));
 
+    if (subjectEntries.length === 0 && extraEntries.length === 0) return;
+
     let isFirstRow = true;
     let totalHours = 0;
 
-    // предметы
     for (const [subjectName, classHours] of subjectEntries) {
       const row: (string | number)[] = [];
       row.push(isFirstRow ? teacher.fullName : "");
@@ -270,40 +401,35 @@ export function exportDistributionToExcel(
     }
 
     // итого по учителю
-    if (subjectEntries.length > 0 || extraEntries.length > 0) {
-      const row: (string | number)[] = [];
-      row.push("");
-      row.push(`Итого: ${teacher.fullName}`);
+    const row: (string | number)[] = [];
+    row.push("");
+    row.push(`Итого: ${teacher.fullName}`);
 
-      for (const clsName of classNames) {
-        let classTotal = 0;
-        subjectGroups.forEach((ch) => {
-          classTotal += ch.get(clsName) || 0;
-        });
-        row.push(classTotal || "");
-      }
-
-      row.push(totalHours || "");
-      aoa.push(row);
-      rowKinds.push("total");
-
+    for (const clsName of classNames) {
+      let classTotal = 0;
+      subjectGroups.forEach((ch) => {
+        classTotal += ch.get(clsName) || 0;
+      });
+      row.push(classTotal || "");
     }
+
+    row.push(totalHours || "");
+    aoa.push(row);
+    rowKinds.push("total");
   });
 
   if (aoa.length === 1) {
     toastOrNoop("Нет данных для экспорта распределения");
-    return;
+    return XLSX.utils.aoa_to_sheet([["Нет данных для экспорта"]]);
   }
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
 
-  // Ширина колонок
   const cols = [{ wch: 35 }, { wch: 40 }];
   classNames.forEach(() => cols.push({ wch: 8 }));
   cols.push({ wch: 10 });
   ws["!cols"] = cols;
 
-  // === Стили ===
   const range = XLSX.utils.decode_range(ws["!ref"] as string);
 
   // Заголовок: жирный + центр
@@ -315,7 +441,6 @@ export function exportDistributionToExcel(
     });
   }
 
-  // Выравнивание: текст слева, числа по центру
   for (let r = 1; r <= range.e.r; r++) {
     for (let c = 0; c <= range.e.c; c++) {
       const isTextCol = c <= 1;
@@ -325,28 +450,306 @@ export function exportDistributionToExcel(
     }
 
     if (rowKinds[r] === "extra") {
-      for (let c = 0; c <= range.e.c; c++) {
-        setStyle(ws, r, c, { font: { italic: true } });
-      }
+      for (let c = 0; c <= range.e.c; c++) setStyle(ws, r, c, { font: { italic: true } });
     }
 
     if (rowKinds[r] === "total") {
-      // толстая граница отделяет учителей
       for (let c = 0; c <= range.e.c; c++) {
         setStyle(ws, r, c, {
           font: { bold: true },
-          border: { bottom: { style: "thick", color: { rgb: "FF000000" } } },
+          border: { bottom: { style: "thick", color: THICK_BLACK } },
         });
       }
     }
   }
 
-  XLSX.utils.book_append_sheet(wb, ws, "Распределение");
+  return ws;
+}
 
+function makeClassMatrixSheet(
+  teachers: Teacher[],
+  classes: SchoolClass[],
+  subjects: Subject[],
+  loadAssignments: LoadAssignment[]
+): XLSX.WorkSheet {
+  const sortedClasses = sortClasses(classes);
+  const sortedTeachers = [...teachers].sort((a, b) => a.fullName.localeCompare(b.fullName, "ru"));
+
+  const teacherNames = sortedTeachers.map((t) => t.fullName);
+  const aoa: (string | number)[][] = [];
+  type Kind = "header" | "row" | "total";
+  const kinds: Kind[] = [];
+
+  const teacherById = new Map(sortedTeachers.map((t) => [t.id, t] as const));
+  const subjectById = new Map(subjects.map((s) => [s.id, s] as const));
+
+  for (const cls of sortedClasses) {
+    const header = ["Класс", classLabel(cls), ...new Array(teacherNames.length).fill(""), ""]; // визуальный заголовок блока
+    aoa.push(header);
+    kinds.push("header");
+
+    const tableHeader = ["Предмет", ...teacherNames, "Итого"];
+    aoa.push(tableHeader);
+    kinds.push("header");
+
+    const rowsBySubject = new Map<string, Map<string, number>>();
+
+    loadAssignments
+      .filter((a) => a.classId === cls.id)
+      .forEach((a) => {
+        const subj = subjectById.get(a.subjectId);
+        const t = teacherById.get(a.teacherId);
+        if (!subj || !t) return;
+
+        if (!rowsBySubject.has(subj.name)) rowsBySubject.set(subj.name, new Map());
+        const m = rowsBySubject.get(subj.name)!;
+        m.set(t.fullName, (m.get(t.fullName) || 0) + a.hoursPerWeek);
+      });
+
+    const subjectNames = [...rowsBySubject.keys()].sort((a, b) => a.localeCompare(b, "ru"));
+
+    for (const subjectName of subjectNames) {
+      const byTeacher = rowsBySubject.get(subjectName)!;
+      const row: (string | number)[] = [subjectName];
+      let total = 0;
+      for (const tn of teacherNames) {
+        const h = byTeacher.get(tn) || 0;
+        row.push(h > 0 ? h : "");
+        total += h;
+      }
+      row.push(total || "");
+      aoa.push(row);
+      kinds.push("row");
+    }
+
+    // Итого по классу
+    if (subjectNames.length > 0) {
+      const row: (string | number)[] = ["Итого"];
+      let grand = 0;
+      for (const tn of teacherNames) {
+        let sum = 0;
+        rowsBySubject.forEach((m) => (sum += m.get(tn) || 0));
+        row.push(sum || "");
+        grand += sum;
+      }
+      row.push(grand || "");
+      aoa.push(row);
+      kinds.push("total");
+    }
+  }
+
+  if (aoa.length === 0) {
+    toastOrNoop("Нет данных для экспорта распределения");
+    return XLSX.utils.aoa_to_sheet([["Нет данных для экспорта"]]);
+  }
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  const cols = [{ wch: 40 }, ...teacherNames.map(() => ({ wch: 18 })), { wch: 10 }];
+  ws["!cols"] = cols;
+
+  const range = XLSX.utils.decode_range(ws["!ref"] as string);
+  for (let r = range.s.r; r <= range.e.r; r++) {
+    const isHeader = kinds[r] === "header";
+    const isTotal = kinds[r] === "total";
+    for (let c = 0; c <= range.e.c; c++) {
+      setStyle(ws, r, c, {
+        font: isHeader || isTotal ? { bold: true } : undefined,
+        alignment: { horizontal: c === 0 ? "left" : "center", vertical: "center", wrapText: true },
+      });
+    }
+    if (isTotal) {
+      for (let c = 0; c <= range.e.c; c++) setStyle(ws, r, c, { border: { bottom: { style: "thick", color: THICK_BLACK } } });
+    }
+  }
+
+  return ws;
+}
+
+function makeSubjectMatrixSheet(
+  teachers: Teacher[],
+  classes: SchoolClass[],
+  subjects: Subject[],
+  loadAssignments: LoadAssignment[]
+): XLSX.WorkSheet {
+  const sortedSubjects = [...subjects].sort((a, b) => a.name.localeCompare(b.name, "ru"));
+  const sortedTeachers = [...teachers].sort((a, b) => a.fullName.localeCompare(b.fullName, "ru"));
+  const sortedClasses = sortClasses(classes);
+
+  const teacherNames = sortedTeachers.map((t) => t.fullName);
+  const classNames = sortedClasses.map(classLabel);
+
+  const aoa: (string | number)[][] = [];
+  type Kind = "header" | "row" | "total";
+  const kinds: Kind[] = [];
+
+  const teacherById = new Map(sortedTeachers.map((t) => [t.id, t] as const));
+  const classById = new Map(sortedClasses.map((c) => [c.id, c] as const));
+
+  for (const subj of sortedSubjects) {
+    aoa.push(["Предмет", subj.name, ...new Array(classNames.length).fill(""), ""]);
+    kinds.push("header");
+
+    const tableHeader = ["Учитель", ...classNames, "Итого"];
+    aoa.push(tableHeader);
+    kinds.push("header");
+
+    const rowsByTeacher = new Map<string, Map<string, number>>();
+
+    loadAssignments
+      .filter((a) => a.subjectId === subj.id)
+      .forEach((a) => {
+        const t = teacherById.get(a.teacherId);
+        const cls = classById.get(a.classId);
+        if (!t || !cls) return;
+
+        if (!rowsByTeacher.has(t.fullName)) rowsByTeacher.set(t.fullName, new Map());
+        const m = rowsByTeacher.get(t.fullName)!;
+        const cn = classLabel(cls);
+        m.set(cn, (m.get(cn) || 0) + a.hoursPerWeek);
+      });
+
+    const teacherRowNames = [...rowsByTeacher.keys()].sort((a, b) => a.localeCompare(b, "ru"));
+
+    for (const tn of teacherRowNames) {
+      const byClass = rowsByTeacher.get(tn)!;
+      const row: (string | number)[] = [tn];
+      let total = 0;
+      for (const cn of classNames) {
+        const h = byClass.get(cn) || 0;
+        row.push(h > 0 ? h : "");
+        total += h;
+      }
+      row.push(total || "");
+      aoa.push(row);
+      kinds.push("row");
+    }
+
+    if (teacherRowNames.length > 0) {
+      const row: (string | number)[] = ["Итого"];
+      let grand = 0;
+      for (const cn of classNames) {
+        let sum = 0;
+        rowsByTeacher.forEach((m) => (sum += m.get(cn) || 0));
+        row.push(sum || "");
+        grand += sum;
+      }
+      row.push(grand || "");
+      aoa.push(row);
+      kinds.push("total");
+    }
+  }
+
+  if (aoa.length === 0) {
+    toastOrNoop("Нет данных для экспорта распределения");
+    return XLSX.utils.aoa_to_sheet([["Нет данных для экспорта"]]);
+  }
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  const cols = [{ wch: 32 }, ...classNames.map(() => ({ wch: 8 })), { wch: 10 }];
+  ws["!cols"] = cols;
+
+  const range = XLSX.utils.decode_range(ws["!ref"] as string);
+  for (let r = range.s.r; r <= range.e.r; r++) {
+    const isHeader = kinds[r] === "header";
+    const isTotal = kinds[r] === "total";
+    for (let c = 0; c <= range.e.c; c++) {
+      setStyle(ws, r, c, {
+        font: isHeader || isTotal ? { bold: true } : undefined,
+        alignment: { horizontal: c === 0 ? "left" : "center", vertical: "center", wrapText: true },
+      });
+    }
+    if (isTotal) {
+      for (let c = 0; c <= range.e.c; c++) setStyle(ws, r, c, { border: { bottom: { style: "thick", color: THICK_BLACK } } });
+    }
+  }
+
+  return ws;
+}
+
+export function exportDistributionToExcel(
+  teachers: Teacher[],
+  classes: SchoolClass[],
+  subjects: Subject[],
+  extracurriculars: Extracurricular[],
+  loadAssignments: LoadAssignment[],
+  extracurricularAssignments: ExtracurricularAssignment[]
+) {
+  const wb = XLSX.utils.book_new();
+  const ws = makeTeacherMatrixSheet(teachers, classes, subjects, extracurriculars, loadAssignments, extracurricularAssignments);
+  XLSX.utils.book_append_sheet(wb, ws, "Распределение");
   XLSX.writeFile(wb, `distribution-${new Date().toISOString().split("T")[0]}.xlsx`, {
     cellStyles: true,
   } as any);
 }
+
+export function exportSelectedDistributionToExcel(
+  mode: DistributionMode,
+  teachers: Teacher[],
+  classes: SchoolClass[],
+  subjects: Subject[],
+  extracurriculars: Extracurricular[],
+  loadAssignments: LoadAssignment[],
+  extracurricularAssignments: ExtracurricularAssignment[],
+  options?: { includeExtracurricular?: boolean }
+) {
+  const includeExtras = Boolean(options?.includeExtracurricular);
+
+  const teacherIds = new Set(loadAssignments.map((a) => a.teacherId));
+  const selectedTeachers = teachers.filter((t) => teacherIds.has(t.id));
+
+  const classIds = new Set(loadAssignments.map((a) => a.classId));
+  const selectedClasses = classes.filter((c) => classIds.has(c.id));
+
+  const subjectIds = new Set(loadAssignments.map((a) => a.subjectId));
+  const selectedSubjects = subjects.filter((s) => subjectIds.has(s.id));
+
+  const selectedExtras = includeExtras
+    ? extracurricularAssignments.filter((a) => teacherIds.has(a.teacherId))
+    : [];
+
+  const flatRows = buildFlatRows(
+    selectedTeachers,
+    selectedClasses,
+    selectedSubjects,
+    extracurriculars,
+    loadAssignments,
+    selectedExtras,
+    includeExtras
+  );
+
+  const wb = XLSX.utils.book_new();
+
+  if (mode === "teacher") {
+    XLSX.utils.book_append_sheet(
+      wb,
+      makeTeacherMatrixSheet(selectedTeachers, selectedClasses, selectedSubjects, extracurriculars, loadAssignments, selectedExtras),
+      "Матрица"
+    );
+  }
+
+  if (mode === "class") {
+    XLSX.utils.book_append_sheet(
+      wb,
+      makeClassMatrixSheet(selectedTeachers, selectedClasses, selectedSubjects, loadAssignments),
+      "Матрица"
+    );
+  }
+
+  if (mode === "subject") {
+    XLSX.utils.book_append_sheet(
+      wb,
+      makeSubjectMatrixSheet(selectedTeachers, selectedClasses, selectedSubjects, loadAssignments),
+      "Матрица"
+    );
+  }
+
+  XLSX.utils.book_append_sheet(wb, makeFlatSheet(flatRows), "Таблица");
+
+  const date = new Date().toISOString().split("T")[0];
+  const suffix = mode === "teacher" ? "teachers" : mode === "class" ? "classes" : "subjects";
+  XLSX.writeFile(wb, `distribution-selected-${suffix}-${date}.xlsx`, { cellStyles: true } as any);
+}
+
 
 function toastOrNoop(message: string) {
   // exportUtils используется и в UI, и в headless сценариях; здесь безопаснее не падать.
