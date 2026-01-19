@@ -23,6 +23,7 @@ import {
   AlertTriangle,
   BookOpen,
   CheckCircle,
+  FileSpreadsheet,
   Info,
   Plus,
   Search,
@@ -33,6 +34,7 @@ import {
 import type { LoadAssignment, TeacherLoad } from "@/types";
 import { DistributionEditorDialog } from "@/pages/distribution/DistributionEditorDialog";
 import { useDistributionIssues } from "@/pages/distribution/distributionIssues";
+import { exportDistributionToExcel } from "@/lib/exportUtils";
 
 export default function Distribution() {
   const {
@@ -570,6 +572,24 @@ export default function Distribution() {
         </div>
 
         <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            disabled={loadAssignments.length === 0 && extracurricularAssignments.length === 0}
+            onClick={() =>
+              exportDistributionToExcel(
+                teachers,
+                classes,
+                subjects,
+                extracurriculars,
+                loadAssignments,
+                extracurricularAssignments
+              )
+            }
+          >
+            <FileSpreadsheet className="h-4 w-4 mr-2" />
+            Экспорт в Excel
+          </Button>
+
           <Dialog open={isAutoDialogOpen} onOpenChange={setIsAutoDialogOpen}>
             <DialogTrigger asChild>
               <Button>
@@ -613,10 +633,7 @@ export default function Distribution() {
             </DialogContent>
           </Dialog>
 
-          <Button
-            variant="outline"
-            onClick={() => openEditor({ hoursPerWeek: 0 })}
-          >
+          <Button variant="outline" onClick={() => openEditor({ hoursPerWeek: 0 })}>
             <Plus className="h-4 w-4 mr-2" />
             Редактор назначений
           </Button>
