@@ -231,25 +231,34 @@ export default function Distribution() {
       for (let i = candidates.length - 1; i >= 0; i--) suffixSum[i] = suffixSum[i + 1] + candidates[i].hours;
 
       let bestSum = 0;
+      let bestPreferredHours = -1;
       let bestPick: number[] = [];
 
-      const dfs = (i: number, sum: number, pick: number[]) => {
-        if (sum > target) return false;
-        if (sum > bestSum) {
+      const isPreferredTask = (t: DistributionTask) => preferred.size > 0 && preferred.has(t.grade);
+
+      const dfs = (i: number, sum: number, preferredSum: number, pick: number[]) => {
+        if (sum > target) return;
+
+        // Обновляем лучший вариант: сначала максимизируем часы в приоритетных параллелях,
+        // затем — общую сумму (чем ближе к target, тем лучше).
+        if (preferredSum > bestPreferredHours || (preferredSum === bestPreferredHours && sum > bestSum)) {
+          bestPreferredHours = preferredSum;
           bestSum = sum;
           bestPick = [...pick];
-          if (bestSum === target) return true;
         }
-        if (i >= candidates.length) return false;
-        if (sum + suffixSum[i] <= bestSum) return false;
+
+        if (i >= candidates.length) return;
+        if (sum + suffixSum[i] <= bestSum && preferredSum <= bestPreferredHours) return;
+
+        const nextPreferred = preferredSum + (isPreferredTask(candidates[i]) ? candidates[i].hours : 0);
 
         // пробуем взять
-        if (dfs(i + 1, sum + candidates[i].hours, [...pick, i])) return true;
+        dfs(i + 1, sum + candidates[i].hours, nextPreferred, [...pick, i]);
         // и не брать
-        return dfs(i + 1, sum, pick);
+        dfs(i + 1, sum, preferredSum, pick);
       };
 
-      dfs(0, 0, []);
+      dfs(0, 0, 0, []);
 
       for (const idx of bestPick) {
         const task = candidates[idx];
