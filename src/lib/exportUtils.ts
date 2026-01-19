@@ -154,134 +154,207 @@ export function exportDistributionToExcel(
   extracurricularAssignments: ExtracurricularAssignment[]
 ) {
   const wb = XLSX.utils.book_new();
-  
-  // Группируем классы по параллелям и сортируем
+
   const sortedClasses = [...classes].sort((a, b) => {
     if (a.grade !== b.grade) return a.grade - b.grade;
     return a.letter.localeCompare(b.letter);
   });
-  
-  // Создаём данные для таблицы распределения
-  const rows: any[] = [];
-  
-  teachers.forEach(teacher => {
-    // Нагрузка по предметам
-    const teacherLoads = loadAssignments.filter(a => a.teacherId === teacher.id);
+  const classNames = sortedClasses.map((c) => `${c.grade}${c.letter}`);
+
+  const header = ["Учитель", "Предмет", ...classNames, "Итого"];
+  const aoa: (string | number)[][] = [header];
+
+  type RowKind = "header" | "subject" | "extra" | "total" | "blank";
+  const rowKinds: RowKind[] = ["header"];
+
+  const thickBorder = {
+    top: { style: "thick", color: { rgb: "FF000000" } },
+    bottom: { style: "thick", color: { rgb: "FF000000" } },
+    left: { style: "thick", color: { rgb: "FF000000" } },
+    right: { style: "thick", color: { rgb: "FF000000" } },
+  } as const;
+
+  const setStyle = (ws: XLSX.WorkSheet, r0: number, c0: number, style: any) => {
+    const addr = XLSX.utils.encode_cell({ r: r0, c: c0 });
+    const cell = (ws as any)[addr];
+    if (!cell) return;
+    (ws as any)[addr] = {
+      ...cell,
+      s: {
+        ...(cell.s ?? {}),
+        ...style,
+        font: { ...(cell.s?.font ?? {}), ...(style.font ?? {}) },
+        alignment: { ...(cell.s?.alignment ?? {}), ...(style.alignment ?? {}) },
+        border: { ...(cell.s?.border ?? {}), ...(style.border ?? {}) },
+      },
+    };
+  };
+
+  teachers.forEach((teacher) => {
+    // === предметная нагрузка ===
+    const teacherLoads = loadAssignments.filter((a) => a.teacherId === teacher.id);
     const subjectGroups = new Map<string, Map<string, number>>();
-    
-    teacherLoads.forEach(load => {
-      const subject = subjects.find(s => s.id === load.subjectId);
-      const cls = classes.find(c => c.id === load.classId);
-      if (subject && cls) {
-        if (!subjectGroups.has(subject.name)) {
-          subjectGroups.set(subject.name, new Map());
-        }
-        const className = `${cls.grade}${cls.letter}`;
-        const current = subjectGroups.get(subject.name)!.get(className) || 0;
-        subjectGroups.get(subject.name)!.set(className, current + load.hoursPerWeek);
-      }
+
+    teacherLoads.forEach((load) => {
+      const subject = subjects.find((s) => s.id === load.subjectId);
+      const cls = classes.find((c) => c.id === load.classId);
+      if (!subject || !cls) return;
+
+      if (!subjectGroups.has(subject.name)) subjectGroups.set(subject.name, new Map());
+
+      const className = `${cls.grade}${cls.letter}`;
+      const current = subjectGroups.get(subject.name)!.get(className) || 0;
+      subjectGroups.get(subject.name)!.set(className, current + load.hoursPerWeek);
     });
-    
-    // Внеурочка
-    const teacherExtras = extracurricularAssignments.filter(a => a.teacherId === teacher.id);
+
+    // === внеурочка (в конце блока учителя) ===
+    const teacherExtras = extracurricularAssignments.filter((a) => a.teacherId === teacher.id);
     const extraGroups = new Map<string, number>();
-    
-    teacherExtras.forEach(extra => {
-      const ext = extracurriculars.find(e => e.id === extra.extracurricularId);
-      if (ext) {
-        const current = extraGroups.get(ext.name) || 0;
-        extraGroups.set(ext.name, current + extra.hoursPerWeek);
-      }
+
+    teacherExtras.forEach((extra) => {
+      const ext = extracurriculars.find((e) => e.id === extra.extracurricularId);
+      if (!ext) return;
+      const current = extraGroups.get(ext.name) || 0;
+      extraGroups.set(ext.name, current + extra.hoursPerWeek);
     });
-    
+
     // Курсы классного руководителя
-    const classTeacherExtras = extracurriculars.filter(e => e.isClassTeacherLed);
-    const myClasses = classes.filter(c => c.classTeacherId === teacher.id);
-    
-    myClasses.forEach(cls => {
-      classTeacherExtras.forEach(ext => {
-        if (ext.targetGrades.includes(cls.grade)) {
-          const current = extraGroups.get(ext.name) || 0;
-          extraGroups.set(ext.name, current + ext.hoursPerWeek);
-        }
+    const classTeacherExtras = extracurriculars.filter((e) => e.isClassTeacherLed);
+    const myClasses = classes.filter((c) => c.classTeacherId === teacher.id);
+
+    myClasses.forEach((cls) => {
+      classTeacherExtras.forEach((ext) => {
+        if (!ext.targetGrades.includes(cls.grade)) return;
+        const current = extraGroups.get(ext.name) || 0;
+        extraGroups.set(ext.name, current + ext.hoursPerWeek);
       });
     });
-    
-    // Добавляем строки для каждого предмета
+
+    const subjectEntries = [...subjectGroups.entries()].sort(([a], [b]) => a.localeCompare(b, "ru"));
+    const extraEntries = [...extraGroups.entries()].sort(([a], [b]) => a.localeCompare(b, "ru"));
+
     let isFirstRow = true;
     let totalHours = 0;
-    
-    subjectGroups.forEach((classHours, subjectName) => {
-      const row: any = {
-        'Учитель': isFirstRow ? teacher.fullName : ''
-      };
-      row['Предмет'] = subjectName;
-      
+
+    // предметы
+    for (const [subjectName, classHours] of subjectEntries) {
+      const row: (string | number)[] = [];
+      row.push(isFirstRow ? teacher.fullName : "");
+      row.push(subjectName);
+
       let subjectTotal = 0;
-      sortedClasses.forEach(cls => {
-        const className = `${cls.grade}${cls.letter}`;
-        const hours = classHours.get(className) || '';
-        row[className] = hours;
-        if (hours) subjectTotal += hours;
-      });
-      
-      row['Итого'] = subjectTotal;
+      for (const clsName of classNames) {
+        const hours = classHours.get(clsName) || 0;
+        row.push(hours > 0 ? hours : "");
+        subjectTotal += hours;
+      }
+
+      row.push(subjectTotal || "");
       totalHours += subjectTotal;
-      rows.push(row);
+      aoa.push(row);
+      rowKinds.push("subject");
       isFirstRow = false;
-    });
-    
-    // Добавляем внеурочку
-    extraGroups.forEach((hours, extName) => {
-      const row: any = {
-        'Учитель': isFirstRow ? teacher.fullName : '',
-        'Предмет': extName
-      };
-      sortedClasses.forEach(cls => {
-        row[`${cls.grade}${cls.letter}`] = '';
-      });
-      row['Итого'] = hours;
+    }
+
+    // внеурочка (внизу) + курсив
+    for (const [extName, hours] of extraEntries) {
+      const row: (string | number)[] = [];
+      row.push(isFirstRow ? teacher.fullName : "");
+      row.push(extName);
+      for (let i = 0; i < classNames.length; i++) row.push("");
+      row.push(hours || "");
       totalHours += hours;
-      rows.push(row);
+      aoa.push(row);
+      rowKinds.push("extra");
       isFirstRow = false;
-    });
-    
-    // Итого по учителю
-    if (subjectGroups.size > 0 || extraGroups.size > 0) {
-      const totalRow: any = {
-        'Учитель': '',
-        'Предмет': `Итого: ${teacher.fullName}`
-      };
-      
-      // Подсчитываем часы по классам
-      sortedClasses.forEach(cls => {
-        const className = `${cls.grade}${cls.letter}`;
+    }
+
+    // итого по учителю
+    if (subjectEntries.length > 0 || extraEntries.length > 0) {
+      const row: (string | number)[] = [];
+      row.push("");
+      row.push(`Итого: ${teacher.fullName}`);
+
+      for (const clsName of classNames) {
         let classTotal = 0;
-        subjectGroups.forEach(classHours => {
-          classTotal += classHours.get(className) || 0;
+        subjectGroups.forEach((ch) => {
+          classTotal += ch.get(clsName) || 0;
         });
-        totalRow[className] = classTotal || '';
-      });
-      
-      totalRow['Итого'] = totalHours;
-      rows.push(totalRow);
-      rows.push({}); // Пустая строка-разделитель
+        row.push(classTotal || "");
+      }
+
+      row.push(totalHours || "");
+      aoa.push(row);
+      rowKinds.push("total");
+
+      // пустая строка-разделитель
+      aoa.push(new Array(header.length).fill(""));
+      rowKinds.push("blank");
     }
   });
-  
-  if (rows.length > 0) {
-    const ws = XLSX.utils.json_to_sheet(rows);
-    
-    // Ширина колонок
-    const cols = [{ wch: 35 }, { wch: 40 }];
-    sortedClasses.forEach(() => cols.push({ wch: 8 }));
-    cols.push({ wch: 10 });
-    ws['!cols'] = cols;
-    
-    XLSX.utils.book_append_sheet(wb, ws, 'Распределение');
+
+  if (aoa.length === 1) {
+    toastOrNoop("Нет данных для экспорта распределения");
+    return;
   }
-  
-  XLSX.writeFile(wb, `distribution-${new Date().toISOString().split('T')[0]}.xlsx`);
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+  // Ширина колонок
+  const cols = [{ wch: 35 }, { wch: 40 }];
+  classNames.forEach(() => cols.push({ wch: 8 }));
+  cols.push({ wch: 10 });
+  ws["!cols"] = cols;
+
+  // === Стили ===
+  const range = XLSX.utils.decode_range(ws["!ref"] as string);
+
+  // Заголовок: жирный + центр
+  for (let c = range.s.c; c <= range.e.c; c++) {
+    setStyle(ws, 0, c, {
+      font: { bold: true },
+      alignment: { horizontal: "center", vertical: "center", wrapText: true },
+      border: thickBorder,
+    });
+  }
+
+  // Выравнивание: текст слева, числа по центру
+  for (let r = 1; r <= range.e.r; r++) {
+    for (let c = 0; c <= range.e.c; c++) {
+      const isTextCol = c <= 1;
+      setStyle(ws, r, c, {
+        alignment: { horizontal: isTextCol ? "left" : "center", vertical: "center" },
+      });
+    }
+
+    if (rowKinds[r] === "extra") {
+      for (let c = 0; c <= range.e.c; c++) {
+        setStyle(ws, r, c, { font: { italic: true } });
+      }
+    }
+
+    if (rowKinds[r] === "total") {
+      // толстая граница отделяет учителей
+      for (let c = 0; c <= range.e.c; c++) {
+        setStyle(ws, r, c, {
+          font: { bold: true },
+          border: { bottom: { style: "thick", color: { rgb: "FF000000" } } },
+        });
+      }
+    }
+  }
+
+  XLSX.utils.book_append_sheet(wb, ws, "Распределение");
+
+  XLSX.writeFile(wb, `distribution-${new Date().toISOString().split("T")[0]}.xlsx`, {
+    cellStyles: true,
+  } as any);
+}
+
+function toastOrNoop(message: string) {
+  // exportUtils используется и в UI, и в headless сценариях; здесь безопаснее не падать.
+  // eslint-disable-next-line no-console
+  console.info(message);
 }
 
 // Экспорт всех данных в один Excel файл
