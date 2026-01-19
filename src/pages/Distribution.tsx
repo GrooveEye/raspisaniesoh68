@@ -198,7 +198,84 @@ export default function Distribution() {
       });
     });
 
+    const taskKey = (t: DistributionTask) => `${t.classId}__${t.subjectId}__${t.groupNumber ?? 0}`;
+    const usedTaskKeys = new Set<string>();
 
+    // === Предзаполнение для «фиксированных» учителей (minHours == maxHours)
+    // Цель: набрать ровно нужное число часов (без дробления предметов одного класса).
+    const fixedTeachers = teachers
+      .filter((t) => t.minHours > 0 && t.minHours === t.maxHours)
+      .sort((a, b) => b.minHours - a.minHours);
+
+    for (const teacher of fixedTeachers) {
+      const already = teacherHours[teacher.id] ?? 0;
+      const target = Math.max(0, teacher.minHours - already);
+      if (target <= 0) continue;
+
+      const preferred = new Set(teacher.preferredGrades ?? []);
+
+      const candidates = tasks
+        .filter((task) => !usedTaskKeys.has(taskKey(task)))
+        .filter((task) => teacher.subjects.includes(task.subjectName))
+        .filter((task) => already + task.hours <= teacher.maxHours)
+        .filter((task) => task.hours > 0)
+        .sort((a, b) => {
+          const ap = preferred.size > 0 && preferred.has(a.grade) ? 1 : 0;
+          const bp = preferred.size > 0 && preferred.has(b.grade) ? 1 : 0;
+          if (ap !== bp) return bp - ap;
+          return b.hours - a.hours;
+        })
+        .slice(0, 30);
+
+      const suffixSum: number[] = new Array(candidates.length + 1).fill(0);
+      for (let i = candidates.length - 1; i >= 0; i--) suffixSum[i] = suffixSum[i + 1] + candidates[i].hours;
+
+      let bestSum = 0;
+      let bestPick: number[] = [];
+
+      const dfs = (i: number, sum: number, pick: number[]) => {
+        if (sum > target) return false;
+        if (sum > bestSum) {
+          bestSum = sum;
+          bestPick = [...pick];
+          if (bestSum === target) return true;
+        }
+        if (i >= candidates.length) return false;
+        if (sum + suffixSum[i] <= bestSum) return false;
+
+        // пробуем взять
+        if (dfs(i + 1, sum + candidates[i].hours, [...pick, i])) return true;
+        // и не брать
+        return dfs(i + 1, sum, pick);
+      };
+
+      dfs(0, 0, []);
+
+      for (const idx of bestPick) {
+        const task = candidates[idx];
+        const key = taskKey(task);
+        if (usedTaskKeys.has(key)) continue;
+
+        // гарантия, что не перепрыгнем max
+        if ((teacherHours[teacher.id] ?? 0) + task.hours > teacher.maxHours) continue;
+        // и что не превысим цель (min==max)
+        if ((teacherHours[teacher.id] ?? 0) - already + task.hours > target) continue;
+
+        usedTaskKeys.add(key);
+        newAssignments.push({
+          id: crypto.randomUUID(),
+          teacherId: teacher.id,
+          subjectId: task.subjectId,
+          classId: task.classId,
+          hoursPerWeek: task.hours,
+          isGroup: task.groupNumber !== undefined,
+          groupNumber: task.groupNumber,
+        });
+        teacherHours[teacher.id] += task.hours;
+        teacherGrades[teacher.id].add(task.grade);
+        teacherAreas[teacher.id].add(task.subjectArea);
+      }
+    }
 
     const calculateTeacherScore = (teacher: (typeof teachers)[0], task: DistributionTask): number => {
       let score = 0;
@@ -222,6 +299,7 @@ export default function Distribution() {
     };
 
     tasks.forEach((task) => {
+      if (usedTaskKeys.has(taskKey(task))) return;
       const candidates = teachers
         .filter((t) => t.subjects.includes(task.subjectName))
         .filter((t) => teacherHours[t.id] + task.hours <= t.maxHours);
