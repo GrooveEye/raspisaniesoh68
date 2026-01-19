@@ -1,106 +1,126 @@
-import { useMemo, useState } from 'react';
-import { useApp } from '@/context/AppContext';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Progress } from '@/components/ui/progress';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { AlertTriangle, CheckCircle, Info, Wand2, Users, BookOpen, Trash2, Plus, AlertCircle, Calendar } from 'lucide-react';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { toast } from 'sonner';
-import type { LoadAssignment, TeacherLoad, ExtracurricularAssignment } from '@/types';
+import { useEffect, useMemo, useState } from "react";
+import { useApp } from "@/context/AppContext";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Input } from "@/components/ui/input";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Progress } from "@/components/ui/progress";
+import { toast } from "sonner";
+import {
+  AlertTriangle,
+  BookOpen,
+  CheckCircle,
+  Info,
+  Plus,
+  Search,
+  Trash2,
+  Users,
+  Wand2,
+} from "lucide-react";
+import type { LoadAssignment, TeacherLoad } from "@/types";
+import { DistributionEditorDialog } from "@/pages/distribution/DistributionEditorDialog";
+import { useDistributionIssues } from "@/pages/distribution/distributionIssues";
 
 export default function Distribution() {
-  const { 
-    classes, 
-    subjects, 
-    teachers, 
-    loadAssignments, 
-    addLoadAssignment, 
+  const {
+    classes,
+    subjects,
+    teachers,
+    loadAssignments,
+    addLoadAssignment,
     deleteLoadAssignment,
     setLoadAssignments,
     getCurriculumHours,
     curriculumPlan,
     extracurriculars,
     extracurricularAssignments,
-    addExtracurricularAssignment,
-    setExtracurricularAssignments
+    setExtracurricularAssignments,
   } = useApp();
-  
+
+  const [mode, setMode] = useState<"class" | "subject" | "teacher" | "issues">("class");
+  const [query, setQuery] = useState("");
+  const [selectedId, setSelectedId] = useState<string>("");
+
   const [isAutoDialogOpen, setIsAutoDialogOpen] = useState(false);
-  const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false);
-  const [selectedSubject, setSelectedSubject] = useState<string>('');
-  const [selectedClass, setSelectedClass] = useState<string>('');
-  const [selectedTeacher, setSelectedTeacher] = useState<string>('');
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [editorDefaults, setEditorDefaults] = useState<
+    Partial<Pick<LoadAssignment, "classId" | "subjectId" | "teacherId" | "hoursPerWeek" | "isGroup" | "groupNumber">>
+  >({});
 
-  // Получить часы из учебного плана
-  const getSubjectHours = (subjectId: string, classId: string) => {
-    return getCurriculumHours(subjectId, classId);
-  };
+  const hasCurriculumData = Object.keys(curriculumPlan).length > 0;
 
-  // Проверка, требуется ли деление на группы
+  const sortedClasses = useMemo(
+    () => [...classes].sort((a, b) => a.grade - b.grade || a.letter.localeCompare(b.letter)),
+    [classes]
+  );
+
+  const getSubjectHours = (subjectId: string, classId: string) => getCurriculumHours(subjectId, classId);
+
   const needsGroupSplit = (subjectId: string, classId: string) => {
-    const subject = subjects.find(s => s.id === subjectId);
-    const cls = classes.find(c => c.id === classId);
+    const subject = subjects.find((s) => s.id === subjectId);
+    const cls = classes.find((c) => c.id === classId);
     if (!subject || !cls) return false;
-    return subject.requiresGroupSplit && subject.groupSplitThreshold && cls.studentCount > subject.groupSplitThreshold;
+    return Boolean(subject.requiresGroupSplit && subject.groupSplitThreshold && cls.studentCount > subject.groupSplitThreshold);
   };
 
-  // Часы внеурочки для учителя (обычные назначения)
+  const getRequiredHours = (subjectId: string, classId: string) => {
+    const hours = getSubjectHours(subjectId, classId);
+    if (!hours) return 0;
+    return needsGroupSplit(subjectId, classId) ? hours * 2 : hours;
+  };
+
+  // ===== Нагрузка по учителям (для режима "По учителям") =====
   const getExtracurricularHoursForTeacher = (teacherId: string): { name: string; hours: number }[] => {
-    const assignments = extracurricularAssignments.filter(a => a.teacherId === teacherId);
-    return assignments.map(a => {
-      const ext = extracurriculars.find(e => e.id === a.extracurricularId);
-      return {
-        name: ext?.name || 'Неизвестно',
-        hours: a.hoursPerWeek,
-      };
+    const assignments = extracurricularAssignments.filter((a) => a.teacherId === teacherId);
+    return assignments.map((a) => {
+      const ext = extracurriculars.find((e) => e.id === a.extracurricularId);
+      return { name: ext?.name || "Неизвестно", hours: a.hoursPerWeek };
     });
   };
 
-  // Часы внеурочки классного руководителя
   const getClassTeacherExtracurricularHours = (teacherId: string): { name: string; hours: number }[] => {
     const result: { name: string; hours: number }[] = [];
-    
-    // Находим классы, где этот учитель — классный руководитель
-    const teacherClasses = classes.filter(c => c.classTeacherId === teacherId);
-    
-    // Находим курсы классного руководителя
-    const classTeacherCourses = extracurriculars.filter(e => e.isClassTeacherLed);
-    
-    teacherClasses.forEach(cls => {
-      classTeacherCourses.forEach(course => {
+    const teacherClasses = classes.filter((c) => c.classTeacherId === teacherId);
+    const classTeacherCourses = extracurriculars.filter((e) => e.isClassTeacherLed);
+
+    teacherClasses.forEach((cls) => {
+      classTeacherCourses.forEach((course) => {
         if (course.targetGrades.includes(cls.grade)) {
-          result.push({
-            name: `${course.name} (${cls.grade}${cls.letter})`,
-            hours: course.hoursPerWeek,
-          });
+          result.push({ name: `${course.name} (${cls.grade}${cls.letter})`, hours: course.hoursPerWeek });
         }
       });
     });
-    
+
     return result;
   };
 
-  // Нагрузка по учителям
   const teacherLoads = useMemo((): TeacherLoad[] => {
-    return teachers.map(teacher => {
-      const assignments = loadAssignments.filter(a => a.teacherId === teacher.id);
-      
-      const subjectHours = assignments.map(a => {
-        const subject = subjects.find(s => s.id === a.subjectId);
-        const cls = classes.find(c => c.id === a.classId);
+    return teachers.map((teacher) => {
+      const assignments = loadAssignments.filter((a) => a.teacherId === teacher.id);
+
+      const subjectHours = assignments.map((a) => {
+        const subject = subjects.find((s) => s.id === a.subjectId);
+        const cls = classes.find((c) => c.id === a.classId);
         return {
-          subjectName: subject?.name || 'Неизвестно',
-          className: cls ? `${cls.grade}${cls.letter}` : 'Неизвестно',
+          subjectName: subject?.name || "Неизвестно",
+          className: cls ? `${cls.grade}${cls.letter}` : "Неизвестно",
           hours: a.hoursPerWeek,
         };
       });
 
-      // Часы внеурочки (обычные назначения + курсы классного руководителя)
       const regularExtracurricular = getExtracurricularHoursForTeacher(teacher.id);
       const classTeacherExtracurricular = getClassTeacherExtracurricularHours(teacher.id);
       const extracurricularHours = [...regularExtracurricular, ...classTeacherExtracurricular];
@@ -123,89 +143,26 @@ export default function Distribution() {
     });
   }, [teachers, loadAssignments, subjects, classes, extracurricularAssignments, extracurriculars]);
 
-  // Статистика
-  const stats = useMemo(() => {
-    const totalAssignments = loadAssignments.length;
-    const totalExtracurricularAssignments = extracurricularAssignments.length;
-    const overloadedTeachers = teacherLoads.filter(tl => tl.loadPercentage > 100).length;
-    const underloadedTeachers = teacherLoads.filter(tl => tl.totalHours < tl.minHours && tl.totalHours > 0).length;
-    
-    // Подсчёт незакрытых часов по предметам
-    let uncoveredHours = 0;
-    classes.forEach(cls => {
-      subjects.forEach(subject => {
-        const hours = getSubjectHours(subject.id, cls.id);
-        if (hours > 0) {
-          const assignments = loadAssignments.filter(
-            a => a.subjectId === subject.id && a.classId === cls.id
-          );
-          const assignedHours = assignments.reduce((sum, a) => sum + a.hoursPerWeek, 0);
-          const requiredHours = needsGroupSplit(subject.id, cls.id) ? hours * 2 : hours;
-          uncoveredHours += Math.max(0, requiredHours - assignedHours);
-        }
-      });
-    });
-
-    return {
-      totalAssignments,
-      totalExtracurricularAssignments,
-      overloadedTeachers,
-      underloadedTeachers,
-      uncoveredHours,
-    };
-  }, [loadAssignments, teacherLoads, classes, subjects, curriculumPlan, extracurricularAssignments]);
-
-  // Матрица распределения (предмет × класс)
-  const distributionMatrix = useMemo(() => {
-    const matrix: Record<string, Record<string, { assigned: number; required: number; teachers: string[] }>> = {};
-    
-    subjects.forEach(subject => {
-      matrix[subject.id] = {};
-      classes.forEach(cls => {
-        const hours = getSubjectHours(subject.id, cls.id);
-        const needsSplit = needsGroupSplit(subject.id, cls.id);
-        const requiredHours = needsSplit ? hours * 2 : hours;
-        
-        const assignments = loadAssignments.filter(
-          a => a.subjectId === subject.id && a.classId === cls.id
-        );
-        const assignedHours = assignments.reduce((sum, a) => sum + a.hoursPerWeek, 0);
-        const teacherNames = assignments.map(a => {
-          const teacher = teachers.find(t => t.id === a.teacherId);
-          return teacher?.fullName.split(' ')[0] || '?';
-        });
-
-        matrix[subject.id][cls.id] = {
-          assigned: assignedHours,
-          required: requiredHours,
-          teachers: teacherNames,
-        };
-      });
-    });
-
-    return matrix;
-  }, [subjects, classes, loadAssignments, teachers, curriculumPlan]);
-
-  // Автоматическое распределение
+  // ===== Автораспределение (оставляем текущую логику как была) =====
   const autoDistribute = () => {
+    // NOTE: переносим существующую функцию 1:1 (без изменений логики)
+    // Чтобы не раздувать этот файл, оставляем реализацию ниже как в исходной версии.
+
     const newAssignments: LoadAssignment[] = [];
-    const newExtracurricularAssignments: ExtracurricularAssignment[] = [];
+    const newExtracurricularAssignments = [] as typeof extracurricularAssignments;
     const teacherHours: Record<string, number> = {};
     const teacherGrades: Record<string, Set<number>> = {};
     const teacherAreas: Record<string, Set<string>> = {};
-    
-    // Инициализация счётчиков часов учителей (включая существующие назначения внеурочки классного руководителя)
-    teachers.forEach(t => {
+
+    teachers.forEach((t) => {
       teacherHours[t.id] = 0;
       teacherGrades[t.id] = new Set();
       teacherAreas[t.id] = new Set();
-      
-      // Учитываем часы внеурочки классного руководителя
+
       const ctHours = getClassTeacherExtracurricularHours(t.id);
       teacherHours[t.id] += ctHours.reduce((sum, h) => sum + h.hours, 0);
     });
 
-    // ===== РАСПРЕДЕЛЕНИЕ ПРЕДМЕТОВ =====
     interface DistributionTask {
       classId: string;
       grade: number;
@@ -217,16 +174,15 @@ export default function Distribution() {
     }
 
     const tasks: DistributionTask[] = [];
-    
-    const sortedClasses = [...classes].sort((a, b) => a.grade - b.grade || a.letter.localeCompare(b.letter));
+    const sorted = [...classes].sort((a, b) => a.grade - b.grade || a.letter.localeCompare(b.letter));
 
-    sortedClasses.forEach(cls => {
-      subjects.forEach(subject => {
+    sorted.forEach((cls) => {
+      subjects.forEach((subject) => {
         const hours = getSubjectHours(subject.id, cls.id);
         if (hours === 0) return;
 
-        const needsSplit = needsGroupSplit(subject.id, cls.id);
-        const groupCount = needsSplit ? 2 : 1;
+        const split = needsGroupSplit(subject.id, cls.id);
+        const groupCount = split ? 2 : 1;
 
         for (let group = 1; group <= groupCount; group++) {
           tasks.push({
@@ -236,7 +192,7 @@ export default function Distribution() {
             subjectName: subject.name,
             subjectArea: subject.area,
             hours,
-            groupNumber: needsSplit ? group : undefined,
+            groupNumber: split ? group : undefined,
           });
         }
       });
@@ -248,42 +204,32 @@ export default function Distribution() {
       return a.grade - b.grade;
     });
 
-    const calculateTeacherScore = (teacher: typeof teachers[0], task: DistributionTask): number => {
+    const calculateTeacherScore = (teacher: (typeof teachers)[0], task: DistributionTask): number => {
       let score = 0;
-      
-      const statusOrder = { 'штатный': 100, 'внутренний совместитель': 50, 'внешний совместитель': 0 };
+      const statusOrder = { штатный: 100, "внутренний совместитель": 50, "внешний совместитель": 0 } as const;
       score += statusOrder[teacher.status];
 
-      if (teacherGrades[teacher.id].has(task.grade)) {
-        score += 80;
-      }
+      if (teacherGrades[teacher.id].has(task.grade)) score += 80;
 
       const preferred = teacher.preferredGrades ?? [];
-      if (preferred.length > 0) {
-        score += preferred.includes(task.grade) ? 120 : -10;
-      }
+      if (preferred.length > 0) score += preferred.includes(task.grade) ? 120 : -10;
 
-      if (teacherAreas[teacher.id].has(task.subjectArea)) {
-        score += 40;
-      }
+      if (teacherAreas[teacher.id].has(task.subjectArea)) score += 40;
 
       score -= teacherGrades[teacher.id].size * 15;
-      
-      if (teacherHours[teacher.id] < teacher.minHours) {
-        score += 60;
-      }
-      
+      if (teacherHours[teacher.id] < teacher.minHours) score += 60;
+
       const loadRatio = teacher.maxHours > 0 ? teacherHours[teacher.id] / teacher.maxHours : 1;
       score -= loadRatio * 30;
-      
+
       return score;
     };
 
-    tasks.forEach(task => {
+    tasks.forEach((task) => {
       const suitableTeachers = teachers
-        .filter(t => t.subjects.includes(task.subjectName))
-        .filter(t => teacherHours[t.id] + task.hours <= t.maxHours)
-        .map(t => ({ teacher: t, score: calculateTeacherScore(t, task) }))
+        .filter((t) => t.subjects.includes(task.subjectName))
+        .filter((t) => teacherHours[t.id] + task.hours <= t.maxHours)
+        .map((t) => ({ teacher: t, score: calculateTeacherScore(t, task) }))
         .sort((a, b) => b.score - a.score);
 
       if (suitableTeachers.length > 0) {
@@ -303,39 +249,34 @@ export default function Distribution() {
       }
     });
 
-    // ===== РАСПРЕДЕЛЕНИЕ ВНЕУРОЧКИ (обычные курсы) =====
-    // Сначала добавляем существующие ручные назначения внеурочки и учитываем их часы
-    extracurricularAssignments.forEach(assignment => {
-      const ext = extracurriculars.find(e => e.id === assignment.extracurricularId);
+    // внеурочка: сохраняем существующие ручные назначения (кроме курсов классного руководителя)
+    extracurricularAssignments.forEach((assignment) => {
+      const ext = extracurriculars.find((e) => e.id === assignment.extracurricularId);
       if (ext && !ext.isClassTeacherLed) {
-        // Это существующее ручное назначение — сохраняем его
         newExtracurricularAssignments.push(assignment);
         teacherHours[assignment.teacherId] = (teacherHours[assignment.teacherId] || 0) + assignment.hoursPerWeek;
       }
     });
 
-    // Находим внеурочки без назначений и назначаем автоматически
-    const regularExtracurriculars = extracurriculars.filter(e => !e.isClassTeacherLed);
-    const assignedExtracurricularIds = new Set(extracurricularAssignments.map(a => a.extracurricularId));
-    
+    const regularExtracurriculars = extracurriculars.filter((e) => !e.isClassTeacherLed);
+    const assignedExtracurricularIds = new Set(extracurricularAssignments.map((a) => a.extracurricularId));
+
     regularExtracurriculars
-      .filter(ext => !assignedExtracurricularIds.has(ext.id))
-      .forEach(ext => {
-        // Находим учителя с наименьшей нагрузкой, который может вести внеурочку
+      .filter((ext) => !assignedExtracurricularIds.has(ext.id))
+      .forEach((ext) => {
         const suitableTeachers = teachers
-          .filter(t => teacherHours[t.id] + ext.hoursPerWeek <= t.maxHours)
+          .filter((t) => teacherHours[t.id] + ext.hoursPerWeek <= t.maxHours)
           .sort((a, b) => {
-            // Приоритет учителям, которые недогружены
             const aScore = teacherHours[a.id] < a.minHours ? 100 : 0;
             const bScore = teacherHours[b.id] < b.minHours ? 100 : 0;
-            
-            const statusOrder = { 'штатный': 50, 'внутренний совместитель': 25, 'внешний совместитель': 0 };
+
+            const statusOrder = { штатный: 50, "внутренний совместитель": 25, "внешний совместитель": 0 } as const;
             const aStatusScore = statusOrder[a.status];
             const bStatusScore = statusOrder[b.status];
-            
-            return (bScore + bStatusScore) - (aScore + aStatusScore);
+
+            return bScore + bStatusScore - (aScore + aStatusScore);
           });
-        
+
         if (suitableTeachers.length > 0) {
           const teacher = suitableTeachers[0];
           newExtracurricularAssignments.push({
@@ -355,59 +296,88 @@ export default function Distribution() {
     toast.success(`Распределено: ${newAssignments.length} предметных назначений, ${newExtracurricularAssignments.length} внеурочных`);
   };
 
-  // Добавление ручного назначения
-  const handleManualAssign = () => {
-    if (!selectedSubject || !selectedClass || !selectedTeacher) {
-      toast.error('Заполните все поля');
-      return;
-    }
+  // ===== Статистика (верхние карточки) =====
+  const stats = useMemo(() => {
+    const totalAssignments = loadAssignments.length;
 
-    const hours = getSubjectHours(selectedSubject, selectedClass);
-    if (hours === 0) {
-      toast.error('Этот предмет не преподаётся в данном классе');
-      return;
-    }
+    let uncoveredHours = 0;
+    sortedClasses.forEach((cls) => {
+      subjects.forEach((subject) => {
+        const required = getRequiredHours(subject.id, cls.id);
+        if (required <= 0) return;
 
-    addLoadAssignment({
-      id: crypto.randomUUID(),
-      teacherId: selectedTeacher,
-      subjectId: selectedSubject,
-      classId: selectedClass,
-      hoursPerWeek: hours,
+        const assigned = loadAssignments
+          .filter((a) => a.subjectId === subject.id && a.classId === cls.id)
+          .reduce((sum, a) => sum + a.hoursPerWeek, 0);
+
+        uncoveredHours += Math.max(0, required - assigned);
+      });
     });
 
-    setIsAssignDialogOpen(false);
-    setSelectedSubject('');
-    setSelectedClass('');
-    setSelectedTeacher('');
-    toast.success('Назначение добавлено');
+    const overloadedTeachers = teacherLoads.filter((tl) => tl.loadPercentage > 100).length;
+
+    return {
+      totalAssignments,
+      uncoveredHours,
+      overloadedTeachers,
+    };
+  }, [loadAssignments, sortedClasses, subjects, teacherLoads, getRequiredHours]);
+
+  const issues = useDistributionIssues({
+    classes,
+    subjects,
+    loadAssignments,
+    getRequiredHours,
+  });
+
+  const filteredList = useMemo(() => {
+    const q = query.trim().toLowerCase();
+
+    if (mode === "class") {
+      return sortedClasses
+        .filter((c) => `${c.grade}${c.letter}`.toLowerCase().includes(q))
+        .map((c) => ({ id: c.id, title: `${c.grade}${c.letter}`, subtitle: c.profile }));
+    }
+
+    if (mode === "subject") {
+      return subjects
+        .filter((s) => s.name.toLowerCase().includes(q) || s.area.toLowerCase().includes(q))
+        .map((s) => ({ id: s.id, title: s.name, subtitle: s.area }));
+    }
+
+    if (mode === "teacher") {
+      return teachers
+        .filter((t) => t.fullName.toLowerCase().includes(q))
+        .map((t) => ({ id: t.id, title: t.fullName, subtitle: t.position }));
+    }
+
+    return [];
+  }, [mode, query, sortedClasses, subjects, teachers]);
+
+  const ensureSelected = (nextMode: typeof mode) => {
+    const id = selectedId;
+    if (nextMode === "class" && !sortedClasses.some((c) => c.id === id)) setSelectedId(sortedClasses[0]?.id ?? "");
+    if (nextMode === "subject" && !subjects.some((s) => s.id === id)) setSelectedId(subjects[0]?.id ?? "");
+    if (nextMode === "teacher" && !teachers.some((t) => t.id === id)) setSelectedId(teachers[0]?.id ?? "");
   };
 
-  // Учителя, которые могут вести выбранный предмет
-  const availableTeachers = useMemo(() => {
-    if (!selectedSubject) return teachers;
-    const subject = subjects.find(s => s.id === selectedSubject);
-    if (!subject) return teachers;
-    return teachers.filter(t => t.subjects.includes(subject.name));
-  }, [selectedSubject, subjects, teachers]);
-
-  // Проверка, заполнен ли учебный план
-  const hasCurriculumData = Object.keys(curriculumPlan).length > 0;
+  // инициализируем выбор при первом заходе
+  useEffect(() => {
+    if (!selectedId) setSelectedId(sortedClasses[0]?.id ?? "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (teachers.length === 0 || classes.length === 0 || subjects.length === 0) {
     return (
       <div className="space-y-6">
-        <div>
+        <header>
           <h1 className="text-3xl font-bold tracking-tight">Распределение нагрузки</h1>
           <p className="text-muted-foreground">Назначение учителей на предметы и классы</p>
-        </div>
-        
+        </header>
         <Alert>
           <Info className="h-4 w-4" />
           <AlertTitle>Недостаточно данных</AlertTitle>
-          <AlertDescription>
-            Для распределения нагрузки необходимо добавить учителей, классы и предметы в справочниках.
-          </AlertDescription>
+          <AlertDescription>Добавьте учителей, классы и предметы в справочниках.</AlertDescription>
         </Alert>
       </div>
     );
@@ -416,102 +386,53 @@ export default function Distribution() {
   if (!hasCurriculumData) {
     return (
       <div className="space-y-6">
-        <div>
+        <header>
           <h1 className="text-3xl font-bold tracking-tight">Распределение нагрузки</h1>
           <p className="text-muted-foreground">Назначение учителей на предметы и классы</p>
-        </div>
-        
+        </header>
         <Alert>
           <AlertTriangle className="h-4 w-4" />
           <AlertTitle>Учебный план не заполнен</AlertTitle>
           <AlertDescription>
-            Сначала заполните учебный план (раздел «Учебный план»), указав количество часов по предметам и классам. 
-            После этого система сможет автоматически распределить нагрузку между учителями.
+            Сначала заполните учебный план (раздел «Учебный план»), указав количество часов по предметам и классам.
           </AlertDescription>
         </Alert>
       </div>
     );
   }
 
+  const openEditor = (defaults?: typeof editorDefaults) => {
+    setEditorDefaults(defaults ?? {});
+    setIsEditorOpen(true);
+  };
+
+  const teacherShort = (fullName?: string) => (fullName ? fullName.split(" ")[0] : "—");
+
+  const detailHeader = useMemo(() => {
+    if (mode === "class") {
+      const cls = classes.find((c) => c.id === selectedId);
+      return cls ? `${cls.grade}${cls.letter}` : "";
+    }
+    if (mode === "subject") {
+      const s = subjects.find((x) => x.id === selectedId);
+      return s?.name ?? "";
+    }
+    if (mode === "teacher") {
+      const t = teachers.find((x) => x.id === selectedId);
+      return t?.fullName ?? "";
+    }
+    return "";
+  }, [mode, selectedId, classes, subjects, teachers]);
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Распределение нагрузки</h1>
-          <p className="text-muted-foreground">Назначение учителей на предметы и классы</p>
+          <p className="text-muted-foreground">Быстрый поиск, ручная правка и список ошибок</p>
         </div>
-        <div className="flex gap-2">
-          <Dialog open={isAssignDialogOpen} onOpenChange={setIsAssignDialogOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline">
-                <Plus className="h-4 w-4 mr-2" />
-                Добавить назначение
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Новое назначение</DialogTitle>
-                <DialogDescription>
-                  Выберите предмет, класс и учителя для назначения
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4 py-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Предмет</label>
-                  <Select value={selectedSubject} onValueChange={setSelectedSubject}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Выберите предмет" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {subjects.map(s => (
-                        <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Класс</label>
-                  <Select value={selectedClass} onValueChange={setSelectedClass}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Выберите класс" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {classes
-                        .sort((a, b) => a.grade - b.grade || a.letter.localeCompare(b.letter))
-                        .map(c => (
-                          <SelectItem key={c.id} value={c.id}>{c.grade}{c.letter}</SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Учитель</label>
-                  <Select value={selectedTeacher} onValueChange={setSelectedTeacher}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Выберите учителя" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableTeachers.map(t => (
-                        <SelectItem key={t.id} value={t.id}>{t.fullName}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {selectedSubject && availableTeachers.length === 0 && (
-                    <p className="text-sm text-destructive">
-                      Нет учителей, которые могут вести этот предмет
-                    </p>
-                  )}
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setIsAssignDialogOpen(false)}>
-                  Отмена
-                </Button>
-                <Button onClick={handleManualAssign}>Назначить</Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
 
+        <div className="flex flex-wrap gap-2">
           <Dialog open={isAutoDialogOpen} onOpenChange={setIsAutoDialogOpen}>
             <DialogTrigger asChild>
               <Button>
@@ -523,25 +444,29 @@ export default function Distribution() {
               <DialogHeader>
                 <DialogTitle>Автоматическое распределение</DialogTitle>
                 <DialogDescription>
-                  Система автоматически распределит нагрузку на основе:
+                  Система автоматически распределит нагрузку на основе специализации, нагрузки и приоритетов.
                 </DialogDescription>
               </DialogHeader>
-              <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground py-4">
-                <li>Специализации учителей (какие предметы могут вести)</li>
-                <li>Минимальной и максимальной нагрузки учителей</li>
-                <li>Приоритета штатных сотрудников над совместителями</li>
-                <li>Группировки классов одной параллели у одного учителя</li>
-                <li>Группировки предметов одной области у одного учителя</li>
-                <li><strong>Включая внеурочную деятельность</strong> (обычные курсы)</li>
-              </ul>
-              <Alert variant="destructive">
-                <AlertCircle className="h-4 w-4" />
-                <AlertTitle>Внимание!</AlertTitle>
-                <AlertDescription>
-                  Текущее распределение (предметы + внеурочка) будет полностью заменено новым.
-                  Курсы классного руководителя сохраняются автоматически.
-                </AlertDescription>
-              </Alert>
+
+              <div className="space-y-3">
+                <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground">
+                  <li>Специализация учителей (какие предметы могут вести)</li>
+                  <li>Минимальная и максимальная нагрузка</li>
+                  <li>Приоритет штатных сотрудников</li>
+                  <li>Приоритетные параллели (если заполнены)</li>
+                  <li>Деление на группы (если требуется)</li>
+                  <li>Внеурочная деятельность (обычные курсы)</li>
+                </ul>
+
+                <Alert>
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertTitle>Внимание</AlertTitle>
+                  <AlertDescription>
+                    Текущее распределение предметов и обычной внеурочки будет заменено новым. Курсы классного руководителя сохраняются.
+                  </AlertDescription>
+                </Alert>
+              </div>
+
               <DialogFooter>
                 <Button variant="outline" onClick={() => setIsAutoDialogOpen(false)}>
                   Отмена
@@ -550,274 +475,528 @@ export default function Distribution() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-        </div>
-      </div>
 
-      {/* Статистика */}
-      <div className="grid gap-4 md:grid-cols-5">
+          <Button
+            variant="outline"
+            onClick={() => openEditor({ hoursPerWeek: 0 })}
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Редактор назначений
+          </Button>
+        </div>
+      </header>
+
+      {/* Статистика (компактная) */}
+      <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Предметных</CardTitle>
+            <CardTitle className="text-sm font-medium">Назначений</CardTitle>
             <BookOpen className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.totalAssignments}</div>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Внеурочных</CardTitle>
-            <Calendar className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.totalExtracurricularAssignments}</div>
-          </CardContent>
-        </Card>
+
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Незакрытые часы</CardTitle>
             {stats.uncoveredHours > 0 ? (
-              <AlertTriangle className="h-4 w-4 text-amber-500" />
+              <AlertTriangle className="h-4 w-4" />
             ) : (
-              <CheckCircle className="h-4 w-4 text-green-500" />
+              <CheckCircle className="h-4 w-4" />
             )}
           </CardHeader>
           <CardContent>
-            <div className={`text-2xl font-bold ${stats.uncoveredHours > 0 ? 'text-amber-500' : 'text-green-500'}`}>
-              {stats.uncoveredHours}
-            </div>
+            <div className="text-2xl font-bold">{stats.uncoveredHours}</div>
           </CardContent>
         </Card>
+
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Перегружены</CardTitle>
-            {stats.overloadedTeachers > 0 ? (
-              <AlertTriangle className="h-4 w-4 text-destructive" />
-            ) : (
-              <CheckCircle className="h-4 w-4 text-green-500" />
-            )}
-          </CardHeader>
-          <CardContent>
-            <div className={`text-2xl font-bold ${stats.overloadedTeachers > 0 ? 'text-destructive' : 'text-green-500'}`}>
-              {stats.overloadedTeachers}
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Ниже минимума</CardTitle>
+            <CardTitle className="text-sm font-medium">Проблем</CardTitle>
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-amber-500">{stats.underloadedTeachers}</div>
+            <div className="text-2xl font-bold">{issues.length}</div>
           </CardContent>
         </Card>
       </div>
 
-      <Tabs defaultValue="teachers" className="space-y-4">
+      <Tabs
+        value={mode}
+        onValueChange={(v) => {
+          const next = v as typeof mode;
+          setMode(next);
+          ensureSelected(next);
+        }}
+        className="space-y-4"
+      >
         <TabsList>
-          <TabsTrigger value="teachers">По учителям</TabsTrigger>
-          <TabsTrigger value="matrix">Матрица распределения</TabsTrigger>
-          <TabsTrigger value="assignments">Все назначения</TabsTrigger>
+          <TabsTrigger value="class">По классам</TabsTrigger>
+          <TabsTrigger value="subject">По предметам</TabsTrigger>
+          <TabsTrigger value="teacher">По учителям</TabsTrigger>
+          <TabsTrigger value="issues">Ошибки</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="teachers" className="space-y-4">
+        <div className="grid gap-4 md:grid-cols-[320px_1fr]">
+          {/* Левая колонка: поиск + список */}
           <Card>
-            <CardHeader>
-              <CardTitle>Нагрузка по учителям</CardTitle>
-              <CardDescription>
-                Текущая нагрузка каждого учителя (предметы + внеурочка)
-              </CardDescription>
+            <CardHeader className="space-y-1">
+              <CardTitle className="text-base">Поиск</CardTitle>
+              <CardDescription>Фильтр списка слева</CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {teacherLoads.map(tl => {
-                  const isOverloaded = tl.loadPercentage > 100;
-                  const isBelowMin = tl.totalHours < tl.minHours && tl.totalHours > 0;
-                  return (
-                    <div key={tl.teacherId} className="border rounded-lg p-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <div>
-                          <span className="font-medium">{tl.teacherName}</span>
-                          <span className="text-muted-foreground text-sm ml-2">
-                            (мин: {tl.minHours} ч., макс: {tl.maxHours} ч.)
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className={`font-bold ${isOverloaded ? 'text-destructive' : isBelowMin ? 'text-amber-500' : 'text-green-600'}`}>
-                            {tl.totalHours}/{tl.maxHours} ч.
-                          </span>
-                          {isOverloaded && <Badge variant="destructive">Перегрузка</Badge>}
-                          {isBelowMin && <Badge variant="outline" className="text-amber-600 border-amber-300">Ниже минимума</Badge>}
-                        </div>
-                      </div>
-                      <Progress 
-                        value={Math.min(tl.loadPercentage, 100)} 
-                        className={`h-2 ${isOverloaded ? '[&>div]:bg-destructive' : ''}`}
-                      />
-                      
-                      {/* Предметы */}
-                      {tl.subjectHours.length > 0 && (
-                        <div className="mt-3">
-                          <p className="text-xs text-muted-foreground mb-1">Предметы:</p>
-                          <div className="flex flex-wrap gap-1">
-                            {tl.subjectHours.map((sh, idx) => (
-                              <Badge key={idx} variant="secondary" className="text-xs">
-                                {sh.subjectName} ({sh.className}) — {sh.hours}ч.
-                              </Badge>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      
-                      {/* Внеурочка */}
-                      {tl.extracurricularHours.length > 0 && (
-                        <div className="mt-2">
-                          <p className="text-xs text-muted-foreground mb-1">Внеурочка:</p>
-                          <div className="flex flex-wrap gap-1">
-                            {tl.extracurricularHours.map((eh, idx) => (
-                              <Badge key={idx} variant="outline" className="text-xs bg-purple-50 text-purple-700 border-purple-200">
-                                {eh.name} — {eh.hours}ч.
-                              </Badge>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+            <CardContent className="space-y-3">
+              <div className="relative">
+                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder={
+                    mode === "class"
+                      ? "Напр. 5А"
+                      : mode === "subject"
+                        ? "Напр. Математика"
+                        : mode === "teacher"
+                          ? "Фамилия"
+                          : ""
+                  }
+                  className="pl-8"
+                  disabled={mode === "issues"}
+                />
               </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
 
-        <TabsContent value="matrix" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Матрица распределения</CardTitle>
-              <CardDescription>
-                Предметы × Классы с указанием назначенных учителей
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="sticky left-0 bg-background min-w-[200px]">Предмет</TableHead>
-                      {classes
-                        .sort((a, b) => a.grade - b.grade || a.letter.localeCompare(b.letter))
-                        .map(cls => (
-                          <TableHead key={cls.id} className="text-center min-w-[80px]">
-                            {cls.grade}{cls.letter}
-                          </TableHead>
-                        ))}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {subjects.map(subject => (
-                      <TableRow key={subject.id}>
-                        <TableCell className="sticky left-0 bg-background font-medium">
-                          {subject.name}
-                        </TableCell>
-                        {classes
-                          .sort((a, b) => a.grade - b.grade || a.letter.localeCompare(b.letter))
-                          .map(cls => {
-                            const cell = distributionMatrix[subject.id]?.[cls.id];
-                            if (!cell || cell.required === 0) {
-                              return (
-                                <TableCell key={cls.id} className="text-center">
-                                  <span className="text-muted-foreground">—</span>
-                                </TableCell>
-                              );
-                            }
-                            const isFull = cell.assigned >= cell.required;
-                            const isPartial = cell.assigned > 0 && cell.assigned < cell.required;
-                            return (
-                              <TableCell key={cls.id} className="text-center">
-                                <div className={`text-xs ${isFull ? 'text-green-600' : isPartial ? 'text-amber-600' : 'text-destructive'}`}>
-                                  {cell.assigned}/{cell.required}
-                                </div>
-                                {cell.teachers.length > 0 && (
-                                  <div className="text-xs text-muted-foreground truncate max-w-[70px]">
-                                    {cell.teachers.join(', ')}
-                                  </div>
-                                )}
-                              </TableCell>
-                            );
-                          })}
-                      </TableRow>
+              {mode !== "issues" ? (
+                <ScrollArea className="h-[520px] pr-2">
+                  <div className="space-y-1">
+                    {filteredList.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => setSelectedId(item.id)}
+                        className={
+                          "w-full text-left rounded-md border px-3 py-2 transition " +
+                          (selectedId === item.id
+                            ? "bg-muted"
+                            : "hover:bg-muted/50")
+                        }
+                      >
+                        <div className="text-sm font-medium">{item.title}</div>
+                        {item.subtitle ? (
+                          <div className="text-xs text-muted-foreground line-clamp-1">{item.subtitle}</div>
+                        ) : null}
+                      </button>
                     ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="assignments" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Все назначения</CardTitle>
-              <CardDescription>
-                Полный список назначений с возможностью удаления
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {loadAssignments.length === 0 ? (
-                <p className="text-muted-foreground text-center py-8">
-                  Нет назначений. Используйте автораспределение или добавьте вручную.
-                </p>
+                  </div>
+                </ScrollArea>
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Учитель</TableHead>
-                      <TableHead>Предмет</TableHead>
-                      <TableHead>Класс</TableHead>
-                      <TableHead className="text-center">Часов</TableHead>
-                      <TableHead className="text-center">Группа</TableHead>
-                      <TableHead className="text-right">Действия</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {loadAssignments.map(a => {
-                      const teacher = teachers.find(t => t.id === a.teacherId);
-                      const subject = subjects.find(s => s.id === a.subjectId);
-                      const cls = classes.find(c => c.id === a.classId);
-                      return (
-                        <TableRow key={a.id}>
-                          <TableCell className="font-medium">{teacher?.fullName || '—'}</TableCell>
-                          <TableCell>{subject?.name || '—'}</TableCell>
-                          <TableCell>{cls ? `${cls.grade}${cls.letter}` : '—'}</TableCell>
-                          <TableCell className="text-center">{a.hoursPerWeek}</TableCell>
-                          <TableCell className="text-center">
-                            {a.isGroup ? (
-                              <Badge variant="outline">Гр. {a.groupNumber}</Badge>
-                            ) : '—'}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => {
-                                deleteLoadAssignment(a.id);
-                                toast.success('Назначение удалено');
-                              }}
-                            >
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
+                <div className="text-sm text-muted-foreground">Откройте вкладку «Ошибки» справа.</div>
               )}
             </CardContent>
           </Card>
-        </TabsContent>
+
+          {/* Правая колонка: детали */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">{mode === "issues" ? "Ошибки и предупреждения" : detailHeader}</CardTitle>
+              <CardDescription>
+                {mode === "class" && "Предметы выбранного класса: норма, назначено, быстрые действия"}
+                {mode === "subject" && "Классы выбранного предмета: норма, назначено, быстрые действия"}
+                {mode === "teacher" && "Нагрузка и список назначений выбранного учителя"}
+                {mode === "issues" && "Проверки: недобор/перебор часов и дубли назначений"}
+              </CardDescription>
+            </CardHeader>
+
+            <CardContent>
+              <TabsContent value="class">
+                <ClassDetail
+                  classId={selectedId}
+                  classes={classes}
+                  subjects={subjects}
+                  teachers={teachers}
+                  loadAssignments={loadAssignments}
+                  getRequiredHours={getRequiredHours}
+                  teacherShort={teacherShort}
+                  onDelete={(id) => {
+                    deleteLoadAssignment(id);
+                    toast.success("Назначение удалено");
+                  }}
+                  onQuickAdd={(subjectId) => {
+                    openEditor({ classId: selectedId, subjectId, hoursPerWeek: getSubjectHours(subjectId, selectedId) });
+                  }}
+                />
+              </TabsContent>
+
+              <TabsContent value="subject">
+                <SubjectDetail
+                  subjectId={selectedId}
+                  classes={sortedClasses}
+                  subjects={subjects}
+                  teachers={teachers}
+                  loadAssignments={loadAssignments}
+                  getRequiredHours={getRequiredHours}
+                  teacherShort={teacherShort}
+                  onDelete={(id) => {
+                    deleteLoadAssignment(id);
+                    toast.success("Назначение удалено");
+                  }}
+                  onQuickAdd={(classId) => {
+                    openEditor({ classId, subjectId: selectedId, hoursPerWeek: getSubjectHours(selectedId, classId) });
+                  }}
+                />
+              </TabsContent>
+
+              <TabsContent value="teacher">
+                <TeacherDetail
+                  teacherId={selectedId}
+                  teacherLoads={teacherLoads}
+                  loadAssignments={loadAssignments}
+                  classes={classes}
+                  subjects={subjects}
+                  onDelete={(id) => {
+                    deleteLoadAssignment(id);
+                    toast.success("Назначение удалено");
+                  }}
+                  onAdd={() => openEditor({ teacherId: selectedId, hoursPerWeek: 0 })}
+                />
+              </TabsContent>
+
+              <TabsContent value="issues">
+                <IssuesDetail
+                  issues={issues}
+                  classes={classes}
+                  subjects={subjects}
+                  onGoTo={(t) => {
+                    if (t.classId) {
+                      setMode("class");
+                      setSelectedId(t.classId);
+                    } else if (t.subjectId) {
+                      setMode("subject");
+                      setSelectedId(t.subjectId);
+                    }
+                  }}
+                />
+              </TabsContent>
+            </CardContent>
+          </Card>
+        </div>
       </Tabs>
+
+      <DistributionEditorDialog
+        open={isEditorOpen}
+        onOpenChange={setIsEditorOpen}
+        teachers={teachers}
+        subjects={subjects}
+        classes={classes}
+        defaults={editorDefaults}
+        getDefaultHours={(subjectId, classId) => getSubjectHours(subjectId, classId)}
+        onSubmit={(assignment) => {
+          addLoadAssignment(assignment);
+        }}
+      />
+    </div>
+  );
+}
+
+function ClassDetail(props: {
+  classId: string;
+  classes: { id: string; grade: number; letter: string }[];
+  subjects: { id: string; name: string }[];
+  teachers: { id: string; fullName: string }[];
+  loadAssignments: LoadAssignment[];
+  getRequiredHours: (subjectId: string, classId: string) => number;
+  teacherShort: (fullName?: string) => string;
+  onDelete: (assignmentId: string) => void;
+  onQuickAdd: (subjectId: string) => void;
+}) {
+  const { classId, subjects, teachers, loadAssignments, getRequiredHours, teacherShort, onDelete, onQuickAdd } = props;
+
+  const rows = useMemo(() => {
+    return subjects
+      .map((s) => {
+        const required = getRequiredHours(s.id, classId);
+        if (required <= 0) return null;
+
+        const assignments = loadAssignments.filter((a) => a.classId === classId && a.subjectId === s.id);
+        const assigned = assignments.reduce((sum, a) => sum + a.hoursPerWeek, 0);
+
+        return { subject: s, required, assigned, assignments };
+      })
+      .filter(Boolean) as { subject: (typeof subjects)[number]; required: number; assigned: number; assignments: LoadAssignment[] }[];
+  }, [subjects, classId, loadAssignments, getRequiredHours]);
+
+  if (!classId) return <div className="text-sm text-muted-foreground">Выберите класс слева.</div>;
+
+  return (
+    <div className="space-y-4">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Предмет</TableHead>
+            <TableHead className="text-center">Назначено/Норма</TableHead>
+            <TableHead>Учителя</TableHead>
+            <TableHead className="text-right">Действия</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((r) => {
+            const ok = r.assigned === r.required;
+            const progress = r.required > 0 ? Math.min(100, (r.assigned / r.required) * 100) : 0;
+            return (
+              <TableRow key={r.subject.id}>
+                <TableCell className="font-medium">{r.subject.name}</TableCell>
+                <TableCell className="text-center">
+                  <div className="text-sm">{r.assigned}/{r.required}</div>
+                  <Progress value={progress} className="h-2" />
+                  {!ok && (
+                    <div className="mt-1 text-xs text-muted-foreground">Требует проверки</div>
+                  )}
+                </TableCell>
+                <TableCell>
+                  <div className="flex flex-wrap gap-1">
+                    {r.assignments.length === 0 ? (
+                      <Badge variant="outline">—</Badge>
+                    ) : (
+                      r.assignments.map((a) => {
+                        const t = teachers.find((x) => x.id === a.teacherId);
+                        return (
+                          <span key={a.id} className="inline-flex items-center gap-1">
+                            <Badge variant="secondary">
+                              {teacherShort(t?.fullName)} {a.isGroup ? `Гр.${a.groupNumber}` : ""} ({a.hoursPerWeek}ч)
+                            </Badge>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => onDelete(a.id)}
+                              aria-label="Удалить назначение"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </span>
+                        );
+                      })
+                    )}
+                  </div>
+                </TableCell>
+                <TableCell className="text-right">
+                  <Button variant="outline" size="sm" onClick={() => onQuickAdd(r.subject.id)}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Добавить
+                  </Button>
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+function SubjectDetail(props: {
+  subjectId: string;
+  classes: { id: string; grade: number; letter: string }[];
+  subjects: { id: string; name: string }[];
+  teachers: { id: string; fullName: string }[];
+  loadAssignments: LoadAssignment[];
+  getRequiredHours: (subjectId: string, classId: string) => number;
+  teacherShort: (fullName?: string) => string;
+  onDelete: (assignmentId: string) => void;
+  onQuickAdd: (classId: string) => void;
+}) {
+  const { subjectId, classes, subjects, teachers, loadAssignments, getRequiredHours, teacherShort, onDelete, onQuickAdd } = props;
+
+  const subject = subjects.find((s) => s.id === subjectId);
+  if (!subjectId) return <div className="text-sm text-muted-foreground">Выберите предмет слева.</div>;
+
+  const rows = useMemo(() => {
+    return classes
+      .map((c) => {
+        const required = getRequiredHours(subjectId, c.id);
+        if (required <= 0) return null;
+
+        const assignments = loadAssignments.filter((a) => a.classId === c.id && a.subjectId === subjectId);
+        const assigned = assignments.reduce((sum, a) => sum + a.hoursPerWeek, 0);
+
+        return { cls: c, required, assigned, assignments };
+      })
+      .filter(Boolean) as { cls: (typeof classes)[number]; required: number; assigned: number; assignments: LoadAssignment[] }[];
+  }, [classes, subjectId, loadAssignments, getRequiredHours]);
+
+  return (
+    <div className="space-y-4">
+      <div className="text-sm text-muted-foreground">Предмет: <span className="text-foreground font-medium">{subject?.name}</span></div>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Класс</TableHead>
+            <TableHead className="text-center">Назначено/Норма</TableHead>
+            <TableHead>Учителя</TableHead>
+            <TableHead className="text-right">Действия</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((r) => {
+            const progress = r.required > 0 ? Math.min(100, (r.assigned / r.required) * 100) : 0;
+            return (
+              <TableRow key={r.cls.id}>
+                <TableCell className="font-medium">{r.cls.grade}{r.cls.letter}</TableCell>
+                <TableCell className="text-center">
+                  <div className="text-sm">{r.assigned}/{r.required}</div>
+                  <Progress value={progress} className="h-2" />
+                </TableCell>
+                <TableCell>
+                  <div className="flex flex-wrap gap-1">
+                    {r.assignments.length === 0 ? (
+                      <Badge variant="outline">—</Badge>
+                    ) : (
+                      r.assignments.map((a) => {
+                        const t = teachers.find((x) => x.id === a.teacherId);
+                        return (
+                          <span key={a.id} className="inline-flex items-center gap-1">
+                            <Badge variant="secondary">
+                              {teacherShort(t?.fullName)} {a.isGroup ? `Гр.${a.groupNumber}` : ""} ({a.hoursPerWeek}ч)
+                            </Badge>
+                            <Button variant="ghost" size="icon" onClick={() => onDelete(a.id)} aria-label="Удалить назначение">
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </span>
+                        );
+                      })
+                    )}
+                  </div>
+                </TableCell>
+                <TableCell className="text-right">
+                  <Button variant="outline" size="sm" onClick={() => onQuickAdd(r.cls.id)}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Добавить
+                  </Button>
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+function TeacherDetail(props: {
+  teacherId: string;
+  teacherLoads: TeacherLoad[];
+  loadAssignments: LoadAssignment[];
+  classes: { id: string; grade: number; letter: string }[];
+  subjects: { id: string; name: string }[];
+  onDelete: (assignmentId: string) => void;
+  onAdd: () => void;
+}) {
+  const { teacherId, teacherLoads, loadAssignments, classes, subjects, onDelete, onAdd } = props;
+  const load = teacherLoads.find((t) => t.teacherId === teacherId);
+
+  if (!teacherId) return <div className="text-sm text-muted-foreground">Выберите учителя слева.</div>;
+  if (!load) return <div className="text-sm text-muted-foreground">Нет данных по учителю.</div>;
+
+  const assignments = loadAssignments.filter((a) => a.teacherId === teacherId);
+  const isOver = load.loadPercentage > 100;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="text-sm">
+          <span className="text-muted-foreground">Итого:</span> <span className="font-medium">{load.totalHours} ч.</span>
+          <span className="text-muted-foreground"> / макс {load.maxHours} ч.</span>
+        </div>
+        <div className="flex items-center gap-2">
+          {isOver ? <Badge variant="destructive">Перегруз</Badge> : <Badge variant="secondary">Ок</Badge>}
+          <Button variant="outline" size="sm" onClick={onAdd}>
+            <Plus className="h-4 w-4 mr-2" />
+            Добавить
+          </Button>
+        </div>
+      </div>
+
+      <Progress value={Math.min(100, load.loadPercentage)} className="h-2" />
+
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Класс</TableHead>
+            <TableHead>Предмет</TableHead>
+            <TableHead className="text-center">Часов</TableHead>
+            <TableHead className="text-center">Группа</TableHead>
+            <TableHead className="text-right">Действия</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {assignments.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={5} className="text-center text-muted-foreground">
+                Нет назначений.
+              </TableCell>
+            </TableRow>
+          ) : (
+            assignments.map((a) => {
+              const cls = classes.find((c) => c.id === a.classId);
+              const subj = subjects.find((s) => s.id === a.subjectId);
+              return (
+                <TableRow key={a.id}>
+                  <TableCell className="font-medium">{cls ? `${cls.grade}${cls.letter}` : "—"}</TableCell>
+                  <TableCell>{subj?.name ?? "—"}</TableCell>
+                  <TableCell className="text-center">{a.hoursPerWeek}</TableCell>
+                  <TableCell className="text-center">{a.isGroup ? <Badge variant="outline">Гр. {a.groupNumber}</Badge> : "—"}</TableCell>
+                  <TableCell className="text-right">
+                    <Button variant="ghost" size="icon" onClick={() => onDelete(a.id)} aria-label="Удалить назначение">
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              );
+            })
+          )}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+function IssuesDetail(props: {
+  issues: { id: string; title: string; description: string; classId?: string; subjectId?: string }[];
+  classes: { id: string; grade: number; letter: string }[];
+  subjects: { id: string; name: string }[];
+  onGoTo: (t: { classId?: string; subjectId?: string }) => void;
+}) {
+  const { issues, classes, subjects, onGoTo } = props;
+
+  const classLabel = (id?: string) => {
+    const c = classes.find((x) => x.id === id);
+    return c ? `${c.grade}${c.letter}` : "—";
+  };
+
+  const subjectLabel = (id?: string) => subjects.find((x) => x.id === id)?.name ?? "—";
+
+  if (issues.length === 0) {
+    return <div className="text-sm text-muted-foreground">Ошибок не найдено.</div>;
+  }
+
+  return (
+    <div className="space-y-2">
+      {issues.map((i) => (
+        <div key={i.id} className="rounded-md border p-3">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <div className="font-medium">{i.title}</div>
+              <div className="text-sm text-muted-foreground">{i.description}</div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {i.classId && <Badge variant="outline">Класс: {classLabel(i.classId)}</Badge>}
+                {i.subjectId && <Badge variant="outline">Предмет: {subjectLabel(i.subjectId)}</Badge>}
+              </div>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => onGoTo(i)}>
+              Открыть
+            </Button>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
