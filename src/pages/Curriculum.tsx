@@ -95,6 +95,11 @@ export default function Curriculum() {
   const { classes, subjects, curriculumPlan, setCurriculumHours, getCurriculumHours } = useApp();
   const [selectedGrade, setSelectedGrade] = useState<string>('all');
 
+  const sortedSubjects = useMemo(
+    () => [...subjects].sort((a, b) => a.name.localeCompare(b.name, "ru")),
+    [subjects]
+  );
+
   // Группировка классов по параллелям
   const classesByGrade = useMemo(() => {
     const grouped: Record<number, typeof classes> = {};
@@ -297,7 +302,7 @@ export default function Curriculum() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {subjects.map(subject => (
+                    {sortedSubjects.map(subject => (
                       <TableRow key={subject.id}>
                         <TableCell className="sticky left-0 bg-background font-medium">
                           <div className="flex items-center gap-2">
@@ -370,7 +375,7 @@ export default function Curriculum() {
                     <CardContent>
                       <div className="space-y-2">
                         <div className="flex flex-wrap gap-1">
-                          {data.subjects.map(subject => (
+                          {[...data.subjects].sort((a, b) => a.localeCompare(b, "ru")).map(subject => (
                             <Badge key={subject} variant="outline" className="text-xs">
                               {subject}
                             </Badge>

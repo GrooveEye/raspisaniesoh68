@@ -579,7 +579,7 @@ export default function Distribution() {
           >
             <Link to="/import-export">
               <FileSpreadsheet className="h-4 w-4 mr-2" />
-              Выборочный экспорт
+              Экспорт / Импорт
             </Link>
           </Button>
 

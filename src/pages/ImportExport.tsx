@@ -1,8 +1,7 @@
-import { useMemo, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useApp } from "@/context/AppContext";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -16,7 +15,6 @@ import {
 } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { 
   Download, 
@@ -42,7 +40,8 @@ import {
   exportSubjectsToExcel,
   exportExtracurricularsToExcel,
   exportDistributionToExcel,
-  exportSelectedDistributionToExcel,
+  exportDistributionByClassToExcel,
+  exportDistributionBySubjectToExcel,
   exportAllToExcel,
   exportTeachersToCSV,
   exportClassesToCSV,
@@ -85,10 +84,6 @@ export default function ImportExport() {
   } = useApp();
   const { toast } = useToast();
 
-  const [distributionQuery, setDistributionQuery] = useState("");
-  const [selectedDistributionIds, setSelectedDistributionIds] = useState<Set<string>>(() => new Set());
-  const [includeDistributionExtras, setIncludeDistributionExtras] = useState(true);
-  
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [isClearDialogOpen, setIsClearDialogOpen] = useState(false);
@@ -562,204 +557,80 @@ export default function ImportExport() {
                 Экспорт распределения нагрузки
               </CardTitle>
               <CardDescription>
-                Выборочный экспорт: отметьте конкретные назначения (класс + предмет + учитель), затем выгрузите отчёт.
+                Основной отчёт — по учителям. Дополнительные разрезы (по классам/по предметам) доступны ниже.
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div className="flex items-center gap-2">
-                  <Input
-                    value={distributionQuery}
-                    onChange={(e) => setDistributionQuery(e.target.value)}
-                    placeholder="Поиск по учителю / предмету / классу"
-                    className="md:w-[360px]"
-                  />
-                  <Badge variant="outline">Выбрано: {selectedDistributionIds.size}</Badge>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setSelectedDistributionIds(new Set(loadAssignments.map((a) => a.id)))}
-                    disabled={loadAssignments.length === 0}
-                  >
-                    Выбрать все
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setSelectedDistributionIds(new Set())}
-                    disabled={selectedDistributionIds.size === 0}
-                  >
-                    Снять выделение
-                  </Button>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="include-extras"
-                  checked={includeDistributionExtras}
-                  onCheckedChange={(v) => setIncludeDistributionExtras(Boolean(v))}
-                />
-                <label htmlFor="include-extras" className="text-sm text-muted-foreground">
-                  Включать внеурочку (по выбранным учителям)
-                </label>
-              </div>
-
-              <ScrollArea className="h-[320px] rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[60px]">Выбор</TableHead>
-                      <TableHead>Класс</TableHead>
-                      <TableHead>Предмет</TableHead>
-                      <TableHead>Учитель</TableHead>
-                      <TableHead className="text-right">Часы</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {useMemo(() => {
-                      const q = distributionQuery.trim().toLowerCase();
-                      const clsById = new Map(classes.map((c) => [c.id, `${c.grade}${c.letter}`] as const));
-                      const subjById = new Map(subjects.map((s) => [s.id, s.name] as const));
-                      const teacherById = new Map(teachers.map((t) => [t.id, t.fullName] as const));
-
-                      return loadAssignments
-                        .map((a) => {
-                          const className = clsById.get(a.classId) || "";
-                          const subjectName = subjById.get(a.subjectId) || "";
-                          const teacherName = teacherById.get(a.teacherId) || "";
-                          return { a, className, subjectName, teacherName };
-                        })
-                        .filter(({ className, subjectName, teacherName }) => {
-                          if (!q) return true;
-                          return (
-                            className.toLowerCase().includes(q) ||
-                            subjectName.toLowerCase().includes(q) ||
-                            teacherName.toLowerCase().includes(q)
-                          );
-                        })
-                        .sort((x, y) => x.teacherName.localeCompare(y.teacherName, "ru") || x.className.localeCompare(y.className, "ru"))
-                        .slice(0, 500);
-                    }, [distributionQuery, loadAssignments, classes, subjects, teachers]).map(({ a, className, subjectName, teacherName }) => {
-                      const checked = selectedDistributionIds.has(a.id);
-                      return (
-                        <TableRow key={a.id}>
-                          <TableCell>
-                            <Checkbox
-                              checked={checked}
-                              onCheckedChange={(v) => {
-                                setSelectedDistributionIds((prev) => {
-                                  const next = new Set(prev);
-                                  if (v) next.add(a.id);
-                                  else next.delete(a.id);
-                                  return next;
-                                });
-                              }}
-                            />
-                          </TableCell>
-                          <TableCell className="font-medium">{className}</TableCell>
-                          <TableCell>{subjectName}</TableCell>
-                          <TableCell>{teacherName}</TableCell>
-                          <TableCell className="text-right">{a.hoursPerWeek}</TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </ScrollArea>
-
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  onClick={() => {
-                    const selectedLoads = loadAssignments.filter((a) => selectedDistributionIds.has(a.id));
-                    if (selectedLoads.length === 0) {
-                      toast({ title: "Ничего не выбрано", description: "Отметьте хотя бы одно назначение" });
-                      return;
-                    }
-                    exportSelectedDistributionToExcel(
-                      "teacher",
-                      teachers,
-                      classes,
-                      subjects,
-                      extracurriculars,
-                      selectedLoads,
-                      extracurricularAssignments,
-                      { includeExtracurricular: includeDistributionExtras }
-                    );
-                  }}
-                  disabled={loadAssignments.length === 0}
-                >
-                  <FileSpreadsheet className="mr-2 h-4 w-4" />
-                  Экспорт по учителям (выборочно)
-                </Button>
-
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    const selectedLoads = loadAssignments.filter((a) => selectedDistributionIds.has(a.id));
-                    if (selectedLoads.length === 0) {
-                      toast({ title: "Ничего не выбрано", description: "Отметьте хотя бы одно назначение" });
-                      return;
-                    }
-                    exportSelectedDistributionToExcel(
-                      "class",
-                      teachers,
-                      classes,
-                      subjects,
-                      extracurriculars,
-                      selectedLoads,
-                      extracurricularAssignments,
-                      { includeExtracurricular: includeDistributionExtras }
-                    );
-                  }}
-                  disabled={loadAssignments.length === 0}
-                >
-                  <FileSpreadsheet className="mr-2 h-4 w-4" />
-                  Экспорт по классам (выборочно)
-                </Button>
-
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    const selectedLoads = loadAssignments.filter((a) => selectedDistributionIds.has(a.id));
-                    if (selectedLoads.length === 0) {
-                      toast({ title: "Ничего не выбрано", description: "Отметьте хотя бы одно назначение" });
-                      return;
-                    }
-                    exportSelectedDistributionToExcel(
-                      "subject",
-                      teachers,
-                      classes,
-                      subjects,
-                      extracurriculars,
-                      selectedLoads,
-                      extracurricularAssignments,
-                      { includeExtracurricular: includeDistributionExtras }
-                    );
-                  }}
-                  disabled={loadAssignments.length === 0}
-                >
-                  <FileSpreadsheet className="mr-2 h-4 w-4" />
-                  Экспорт по предметам (выборочно)
-                </Button>
-
-                <Button
-                  variant="ghost"
-                  onClick={() => exportDistributionToExcel(teachers, classes, subjects, extracurriculars, loadAssignments, extracurricularAssignments)}
-                  disabled={loadAssignments.length === 0}
-                >
-                  Обычный экспорт (всё)
-                </Button>
-              </div>
+            <CardContent className="flex flex-wrap gap-2">
+              <Button
+                onClick={() =>
+                  exportDistributionToExcel(
+                    teachers,
+                    classes,
+                    subjects,
+                    extracurriculars,
+                    loadAssignments,
+                    extracurricularAssignments
+                  )
+                }
+                disabled={loadAssignments.length === 0}
+              >
+                <FileSpreadsheet className="mr-2 h-4 w-4" />
+                Экспорт по учителям (всё)
+              </Button>
 
               {loadAssignments.length === 0 && (
                 <p className="text-sm text-muted-foreground">Сначала выполните распределение нагрузки</p>
               )}
+            </CardContent>
+          </Card>
+
+          {/* Дополнительные разрезы распределения */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <TableIcon className="h-4 w-4" />
+                Распределение — доп. отчёты
+              </CardTitle>
+              <CardDescription>
+                Формат: лист «Матрица» + лист «Таблица».
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                onClick={() =>
+                  exportDistributionByClassToExcel(
+                    teachers,
+                    classes,
+                    subjects,
+                    extracurriculars,
+                    loadAssignments,
+                    extracurricularAssignments
+                  )
+                }
+                disabled={loadAssignments.length === 0}
+              >
+                <FileSpreadsheet className="mr-2 h-4 w-4" />
+                Экспорт по классам
+              </Button>
+
+              <Button
+                variant="outline"
+                onClick={() =>
+                  exportDistributionBySubjectToExcel(
+                    teachers,
+                    classes,
+                    subjects,
+                    extracurriculars,
+                    loadAssignments,
+                    extracurricularAssignments
+                  )
+                }
+                disabled={loadAssignments.length === 0}
+              >
+                <FileSpreadsheet className="mr-2 h-4 w-4" />
+                Экспорт по предметам
+              </Button>
             </CardContent>
           </Card>
           

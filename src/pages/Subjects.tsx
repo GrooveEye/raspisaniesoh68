@@ -57,10 +57,13 @@ export default function Subjects() {
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
   const [formData, setFormData] = useState<Omit<Subject, 'id'>>(emptySubject);
 
-  const filteredSubjects = subjects.filter(subject =>
-    subject.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    subject.area.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredSubjects = subjects
+    .filter(
+      (subject) =>
+        subject.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        subject.area.toLowerCase().includes(searchQuery.toLowerCase())
+    )
+    .sort((a, b) => a.name.localeCompare(b.name, "ru"));
 
   const handleOpenDialog = (subject?: Subject) => {
     if (subject) {

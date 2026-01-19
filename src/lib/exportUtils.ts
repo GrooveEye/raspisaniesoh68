@@ -105,7 +105,8 @@ export function exportClassesToExcel(classes: SchoolClass[], teachers: Teacher[]
 }
 
 export function exportSubjectsToExcel(subjects: Subject[]) {
-  const data = subjects.map(s => ({
+  const sortedSubjects = [...subjects].sort((a, b) => a.name.localeCompare(b.name, "ru"));
+  const data = sortedSubjects.map(s => ({
     'Название': s.name,
     'Предметная область': s.area,
     'Деление на группы': s.requiresGroupSplit ? 'Да' : 'Нет',
@@ -682,6 +683,58 @@ export function exportDistributionToExcel(
   } as any);
 }
 
+export function exportDistributionByClassToExcel(
+  teachers: Teacher[],
+  classes: SchoolClass[],
+  subjects: Subject[],
+  extracurriculars: Extracurricular[],
+  loadAssignments: LoadAssignment[],
+  extracurricularAssignments: ExtracurricularAssignment[]
+) {
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, makeClassMatrixSheet(teachers, classes, subjects, loadAssignments), "Матрица");
+
+  const flatRows = buildFlatRows(
+    teachers,
+    classes,
+    subjects,
+    extracurriculars,
+    loadAssignments,
+    extracurricularAssignments,
+    true
+  );
+  XLSX.utils.book_append_sheet(wb, makeFlatSheet(flatRows), "Таблица");
+
+  const date = new Date().toISOString().split("T")[0];
+  XLSX.writeFile(wb, `distribution-classes-${date}.xlsx`, { cellStyles: true } as any);
+}
+
+export function exportDistributionBySubjectToExcel(
+  teachers: Teacher[],
+  classes: SchoolClass[],
+  subjects: Subject[],
+  extracurriculars: Extracurricular[],
+  loadAssignments: LoadAssignment[],
+  extracurricularAssignments: ExtracurricularAssignment[]
+) {
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, makeSubjectMatrixSheet(teachers, classes, subjects, loadAssignments), "Матрица");
+
+  const flatRows = buildFlatRows(
+    teachers,
+    classes,
+    subjects,
+    extracurriculars,
+    loadAssignments,
+    extracurricularAssignments,
+    true
+  );
+  XLSX.utils.book_append_sheet(wb, makeFlatSheet(flatRows), "Таблица");
+
+  const date = new Date().toISOString().split("T")[0];
+  XLSX.writeFile(wb, `distribution-subjects-${date}.xlsx`, { cellStyles: true } as any);
+}
+
 export function exportSelectedDistributionToExcel(
   mode: DistributionMode,
   teachers: Teacher[],
@@ -804,7 +857,8 @@ export function exportAllToExcel(
   }
 
   // Лист предметов
-  const subjectsData = subjects.map(s => ({
+  const sortedSubjects = [...subjects].sort((a, b) => a.name.localeCompare(b.name, "ru"));
+  const subjectsData = sortedSubjects.map(s => ({
     'Название': s.name,
     'Предметная область': s.area,
     'Деление на группы': s.requiresGroupSplit ? 'Да' : 'Нет',
@@ -853,8 +907,16 @@ function curriculumPlanToRows(
   classes: SchoolClass[],
   curriculumPlan: CurriculumPlan
 ): CurriculumPlanRow[] {
-  const subjectById = new Map(subjects.map(s => [s.id, s] as const));
-  const classById = new Map(classes.map(c => [c.id, c] as const));
+  const subjectById = new Map(subjects.map((s) => [s.id, s] as const));
+  const classById = new Map(classes.map((c) => [c.id, c] as const));
+
+  const parseClass = (label: string) => {
+    const m = label.match(/(\d+)\s*([A-Za-zА-Яа-я]+)/);
+    return {
+      grade: m ? Number(m[1]) : Number.NaN,
+      letter: m ? m[2].toUpperCase() : label,
+    };
+  };
 
   return Object.entries(curriculumPlan)
     .map(([key, hoursPerWeek]) => {
@@ -869,22 +931,81 @@ function curriculumPlanToRows(
       } satisfies CurriculumPlanRow;
     })
     .filter((r): r is CurriculumPlanRow => !!r && r.hoursPerWeek > 0)
-    .sort((a, b) => a.className.localeCompare(b.className) || a.subjectName.localeCompare(b.subjectName));
+    .sort((a, b) => {
+      const ca = parseClass(a.className);
+      const cb = parseClass(b.className);
+      const gradeCmp = (ca.grade || 0) - (cb.grade || 0);
+      if (gradeCmp !== 0) return gradeCmp;
+      const letterCmp = ca.letter.localeCompare(cb.letter, 'ru');
+      if (letterCmp !== 0) return letterCmp;
+      return a.subjectName.localeCompare(b.subjectName, 'ru');
+    });
 }
 
 export function exportCurriculumPlanToExcel(subjects: Subject[], classes: SchoolClass[], curriculumPlan: CurriculumPlan) {
-  const rows = curriculumPlanToRows(subjects, classes, curriculumPlan).map(r => ({
+  const sortedSubjects = [...subjects].sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+  const sortedClasses = sortClasses(classes);
+  const classNames = sortedClasses.map(classLabel);
+
+  // 1) Матрица (как на вкладке «Учебный план»)
+  const aoa: (string | number)[][] = [["Предмет", ...classNames]];
+
+  const totalsByClass = new Map<string, number>(classNames.map((n) => [n, 0]));
+
+  for (const subj of sortedSubjects) {
+    const row: (string | number)[] = [subj.name];
+    for (const cls of sortedClasses) {
+      const hours = Number(curriculumPlan[`${subj.id}_${cls.id}`] ?? 0);
+      row.push(hours > 0 ? hours : "");
+      if (hours > 0) {
+        const cn = classLabel(cls);
+        totalsByClass.set(cn, (totalsByClass.get(cn) || 0) + hours);
+      }
+    }
+    aoa.push(row);
+  }
+
+  // ИТОГО (как в UI)
+  const totalRow: (string | number)[] = ["ИТОГО"];
+  for (const cn of classNames) totalRow.push(totalsByClass.get(cn) || "");
+  aoa.push(totalRow);
+
+  const wsMatrix = XLSX.utils.aoa_to_sheet(aoa);
+  wsMatrix['!cols'] = [{ wch: 34 }, ...classNames.map(() => ({ wch: 9 }))];
+
+  const range = XLSX.utils.decode_range(wsMatrix['!ref'] as string);
+  // header
+  for (let c = range.s.c; c <= range.e.c; c++) {
+    setStyle(wsMatrix, 0, c, {
+      font: { bold: true },
+      alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+      border: thickBorder,
+    });
+  }
+  // totals row styling
+  const lastRow = range.e.r;
+  for (let c = range.s.c; c <= range.e.c; c++) {
+    setStyle(wsMatrix, lastRow, c, {
+      font: { bold: true },
+      border: { top: { style: 'thick', color: THICK_BLACK } },
+      alignment: { horizontal: c === 0 ? 'left' : 'center', vertical: 'center' },
+    });
+  }
+
+  // 2) Плоская таблица
+  const flatRows = curriculumPlanToRows(subjects, classes, curriculumPlan).map((r) => ({
     'Предмет': r.subjectName,
     'Класс': r.className,
     'Часов в неделю': r.hoursPerWeek,
   }));
+  const wsFlat = XLSX.utils.json_to_sheet(flatRows);
+  wsFlat['!cols'] = [{ wch: 35 }, { wch: 10 }, { wch: 14 }];
 
-  const ws = XLSX.utils.json_to_sheet(rows);
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Учебный план');
-  ws['!cols'] = [{ wch: 35 }, { wch: 10 }, { wch: 14 }];
+  XLSX.utils.book_append_sheet(wb, wsMatrix, 'Матрица');
+  XLSX.utils.book_append_sheet(wb, wsFlat, 'Таблица');
 
-  XLSX.writeFile(wb, `curriculum-plan-${new Date().toISOString().split('T')[0]}.xlsx`);
+  XLSX.writeFile(wb, `curriculum-plan-${new Date().toISOString().split('T')[0]}.xlsx`, { cellStyles: true } as any);
 }
 
 export function exportCurriculumPlanToCSV(subjects: Subject[], classes: SchoolClass[], curriculumPlan: CurriculumPlan) {
@@ -978,7 +1099,8 @@ export function exportClassesToCSV(classes: SchoolClass[], teachers: Teacher[]) 
 
 export function exportSubjectsToCSV(subjects: Subject[]) {
   const headers = ['Название', 'Предметная область', 'Деление на группы', 'Порог деления'];
-  const rows = subjects.map(s => [
+  const sortedSubjects = [...subjects].sort((a, b) => a.name.localeCompare(b.name, "ru"));
+  const rows = sortedSubjects.map(s => [
     s.name,
     s.area,
     s.requiresGroupSplit ? 'Да' : 'Нет',
