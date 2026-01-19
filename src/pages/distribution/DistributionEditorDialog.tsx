@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { LoadAssignment, Subject, Teacher, SchoolClass } from "@/types";
 import { Button } from "@/components/ui/button";
 import {
@@ -78,6 +78,21 @@ export function DistributionEditorDialog(props: {
     setIsGroup(defaults?.isGroup ?? false);
     setGroupNumber(defaults?.groupNumber ?? 1);
   };
+
+  // ВАЖНО: стейты инициализируются один раз; при повторном открытии/смене defaults
+  // нужно синхронизировать значения, иначе остаётся предыдущий предмет/класс.
+  useEffect(() => {
+    if (open) resetFromDefaults();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    open,
+    defaults?.subjectId,
+    defaults?.classId,
+    defaults?.teacherId,
+    defaults?.hoursPerWeek,
+    defaults?.isGroup,
+    defaults?.groupNumber,
+  ]);
 
   return (
     <Dialog
