@@ -323,6 +323,8 @@ export default function Distribution() {
     };
   }, [loadAssignments, sortedClasses, subjects, teacherLoads, getRequiredHours]);
 
+  const hasTeacherOverload = stats.overloadedTeachers > 0;
+
   const issues = useDistributionIssues({
     classes,
     subjects,
@@ -535,7 +537,9 @@ export default function Distribution() {
         <TabsList>
           <TabsTrigger value="class">По классам</TabsTrigger>
           <TabsTrigger value="subject">По предметам</TabsTrigger>
-          <TabsTrigger value="teacher">По учителям</TabsTrigger>
+          <TabsTrigger value="teacher" className={hasTeacherOverload ? "text-destructive" : undefined}>
+            По учителям
+          </TabsTrigger>
           <TabsTrigger value="issues">Ошибки</TabsTrigger>
         </TabsList>
 
