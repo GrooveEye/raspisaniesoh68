@@ -287,9 +287,6 @@ export function exportDistributionToExcel(
       aoa.push(row);
       rowKinds.push("total");
 
-      // пустая строка-разделитель
-      aoa.push(new Array(header.length).fill(""));
-      rowKinds.push("blank");
     }
   });
 
