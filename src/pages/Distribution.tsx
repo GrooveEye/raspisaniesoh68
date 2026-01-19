@@ -201,7 +201,8 @@ export default function Distribution() {
     tasks.sort((a, b) => {
       if (a.subjectArea !== b.subjectArea) return a.subjectArea.localeCompare(b.subjectArea);
       if (a.subjectId !== b.subjectId) return a.subjectName.localeCompare(b.subjectName);
-      return a.grade - b.grade;
+      // Сначала обрабатываем старшие классы, чтобы приоритеты 9–11 не «съедались» младшими.
+      return b.grade - a.grade;
     });
 
     const calculateTeacherScore = (teacher: (typeof teachers)[0], task: DistributionTask): number => {
