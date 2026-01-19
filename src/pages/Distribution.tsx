@@ -981,10 +981,10 @@ function IssuesDetail(props: {
   return (
     <div className="space-y-2">
       {issues.map((i) => (
-        <div key={i.id} className="rounded-md border p-3">
+        <div key={i.id} className="rounded-md border border-destructive/40 bg-destructive/5 p-3">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
-              <div className="font-medium">{i.title}</div>
+              <div className="font-medium text-destructive">{i.title}</div>
               <div className="text-sm text-muted-foreground">{i.description}</div>
               <div className="mt-2 flex flex-wrap gap-2">
                 {i.classId && <Badge variant="outline">Класс: {classLabel(i.classId)}</Badge>}
