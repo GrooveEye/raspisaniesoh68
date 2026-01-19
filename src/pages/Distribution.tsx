@@ -332,19 +332,36 @@ export default function Distribution() {
     getRequiredHours,
   });
 
+  const problemClassIds = useMemo(() => new Set(issues.map((i) => i.classId).filter(Boolean) as string[]), [issues]);
+  const problemSubjectIds = useMemo(() => new Set(issues.map((i) => i.subjectId).filter(Boolean) as string[]), [issues]);
+
+  const hasClassProblems = problemClassIds.size > 0;
+  const hasSubjectProblems = problemSubjectIds.size > 0;
+  const hasIssues = issues.length > 0;
+
   const filteredList = useMemo(() => {
     const q = query.trim().toLowerCase();
 
     if (mode === "class") {
       return sortedClasses
         .filter((c) => `${c.grade}${c.letter}`.toLowerCase().includes(q))
-        .map((c) => ({ id: c.id, title: `${c.grade}${c.letter}`, subtitle: c.profile }));
+        .map((c) => ({
+          id: c.id,
+          title: `${c.grade}${c.letter}`,
+          subtitle: c.profile,
+          tone: problemClassIds.has(c.id) ? ("danger" as const) : undefined,
+        }));
     }
 
     if (mode === "subject") {
       return subjects
         .filter((s) => s.name.toLowerCase().includes(q) || s.area.toLowerCase().includes(q))
-        .map((s) => ({ id: s.id, title: s.name, subtitle: s.area }));
+        .map((s) => ({
+          id: s.id,
+          title: s.name,
+          subtitle: s.area,
+          tone: problemSubjectIds.has(s.id) ? ("danger" as const) : undefined,
+        }));
     }
 
     if (mode === "teacher") {
@@ -358,7 +375,7 @@ export default function Distribution() {
     }
 
     return [];
-  }, [mode, query, sortedClasses, subjects, teachers, teacherLoads]);
+  }, [mode, query, sortedClasses, subjects, teachers, teacherLoads, problemClassIds, problemSubjectIds]);
 
   const ensureSelected = (nextMode: typeof mode) => {
     const id = selectedId;
@@ -539,12 +556,18 @@ export default function Distribution() {
         className="space-y-4"
       >
         <TabsList>
-          <TabsTrigger value="class">По классам</TabsTrigger>
-          <TabsTrigger value="subject">По предметам</TabsTrigger>
+          <TabsTrigger value="class" className={hasClassProblems ? "text-destructive" : undefined}>
+            По классам
+          </TabsTrigger>
+          <TabsTrigger value="subject" className={hasSubjectProblems ? "text-destructive" : undefined}>
+            По предметам
+          </TabsTrigger>
           <TabsTrigger value="teacher" className={hasTeacherOverload ? "text-destructive" : undefined}>
             По учителям
           </TabsTrigger>
-          <TabsTrigger value="issues">Ошибки</TabsTrigger>
+          <TabsTrigger value="issues" className={hasIssues ? "text-destructive" : undefined}>
+            Ошибки
+          </TabsTrigger>
         </TabsList>
 
         <div className="grid gap-4 md:grid-cols-[320px_1fr]">
