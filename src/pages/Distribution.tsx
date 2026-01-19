@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { useApp } from "@/context/AppContext";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -572,6 +573,16 @@ export default function Distribution() {
         </div>
 
         <div className="flex flex-wrap gap-2">
+          <Button
+            asChild
+            variant="outline"
+          >
+            <Link to="/import-export">
+              <FileSpreadsheet className="h-4 w-4 mr-2" />
+              Выборочный экспорт
+            </Link>
+          </Button>
+
           <Button
             variant="outline"
             disabled={loadAssignments.length === 0 && extracurricularAssignments.length === 0}
