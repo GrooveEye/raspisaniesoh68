@@ -350,11 +350,15 @@ export default function Distribution() {
     if (mode === "teacher") {
       return teachers
         .filter((t) => t.fullName.toLowerCase().includes(q))
-        .map((t) => ({ id: t.id, title: t.fullName, subtitle: t.position }));
+        .map((t) => {
+          const load = teacherLoads.find((tl) => tl.teacherId === t.id);
+          const isOver = (load?.loadPercentage ?? 0) > 100;
+          return { id: t.id, title: t.fullName, subtitle: t.position, tone: isOver ? ("danger" as const) : undefined };
+        });
     }
 
     return [];
-  }, [mode, query, sortedClasses, subjects, teachers]);
+  }, [mode, query, sortedClasses, subjects, teachers, teacherLoads]);
 
   const ensureSelected = (nextMode: typeof mode) => {
     const id = selectedId;
@@ -573,24 +577,31 @@ export default function Distribution() {
               {mode !== "issues" ? (
                 <ScrollArea className="h-[520px] pr-2">
                   <div className="space-y-1">
-                    {filteredList.map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => setSelectedId(item.id)}
-                        className={
-                          "w-full text-left rounded-md border px-3 py-2 transition " +
-                          (selectedId === item.id
-                            ? "bg-muted"
-                            : "hover:bg-muted/50")
-                        }
-                      >
-                        <div className="text-sm font-medium">{item.title}</div>
-                        {item.subtitle ? (
-                          <div className="text-xs text-muted-foreground line-clamp-1">{item.subtitle}</div>
-                        ) : null}
-                      </button>
-                    ))}
+                    {filteredList.map((item) => {
+                      const isSelected = selectedId === item.id;
+                      const isDanger = (item as { tone?: "danger" }).tone === "danger";
+
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => setSelectedId(item.id)}
+                          className={
+                            "w-full text-left rounded-md border px-3 py-2 transition " +
+                            (isSelected
+                              ? "bg-muted"
+                              : isDanger
+                                ? "border-destructive/40 bg-destructive/5 hover:bg-destructive/10"
+                                : "hover:bg-muted/50")
+                          }
+                        >
+                          <div className={"text-sm font-medium " + (isDanger ? "text-destructive" : "")}>{item.title}</div>
+                          {item.subtitle ? (
+                            <div className="text-xs text-muted-foreground line-clamp-1">{item.subtitle}</div>
+                          ) : null}
+                        </button>
+                      );
+                    })}
                   </div>
                 </ScrollArea>
               ) : (
