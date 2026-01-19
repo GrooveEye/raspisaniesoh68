@@ -226,9 +226,16 @@ export default function Distribution() {
     };
 
     tasks.forEach((task) => {
-      const suitableTeachers = teachers
+      const candidates = teachers
         .filter((t) => t.subjects.includes(task.subjectName))
-        .filter((t) => teacherHours[t.id] + task.hours <= t.maxHours)
+        .filter((t) => teacherHours[t.id] + task.hours <= t.maxHours);
+
+      // Если есть учителя, которые ещё не набрали минимум, сначала закрываем их минимум.
+      // Это делает minHours «обязательным» в пределах доступных часов/подходящих предметов.
+      const needMin = candidates.filter((t) => teacherHours[t.id] < t.minHours);
+      const pool = needMin.length > 0 ? needMin : candidates;
+
+      const suitableTeachers = pool
         .map((t) => ({ teacher: t, score: calculateTeacherScore(t, task) }))
         .sort((a, b) => b.score - a.score);
 
