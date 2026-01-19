@@ -123,7 +123,10 @@ export function DistributionEditorDialog(props: {
                 <SelectValue placeholder="Выберите предмет" />
               </SelectTrigger>
               <SelectContent>
-                {subjects.map((s) => (
+                {useMemo(
+                  () => [...subjects].sort((a, b) => a.name.localeCompare(b.name, "ru")),
+                  [subjects]
+                ).map((s) => (
                   <SelectItem key={s.id} value={s.id}>
                     {s.name}
                   </SelectItem>
