@@ -95,6 +95,52 @@ export default function Teachers() {
       teacher.subjects.some((s) => s.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
+  const rankedSubjectSuggestions = useMemo(() => {
+    const q = subjectInput.trim().toLowerCase();
+
+    const nameToArea = new Map(subjects.map((s) => [s.name.toLowerCase(), s.area]));
+    const teacherAreas = formData.subjects
+      .map((n) => nameToArea.get(n.toLowerCase()))
+      .filter(Boolean) as string[];
+    const teacherAreaSet = new Set(teacherAreas);
+
+    const areaNeighbors: Record<string, string[]> = {
+      "Математика и информатика": ["Естественнонаучные предметы", "Технология"],
+      "Естественнонаучные предметы": ["Математика и информатика"],
+      "Русский язык и литература": ["Иностранные языки", "Общественно-научные предметы"],
+      "Иностранные языки": ["Русский язык и литература"],
+      "Общественно-научные предметы": ["Русский язык и литература"],
+      "Технология": ["Математика и информатика", "Искусство"],
+      "Искусство": ["Технология"],
+      "Физическая культура и ОБЖ": [],
+    };
+
+    const neighborSet = new Set<string>();
+    for (const a of teacherAreaSet) {
+      (areaNeighbors[a] ?? []).forEach((x) => neighborSet.add(x));
+    }
+
+    const score = (name: string, area: string) => {
+      // 0 — своя область, 1 — смежная, 2 — любая другая
+      const areaScore = teacherAreaSet.size === 0 ? 0 : teacherAreaSet.has(area) ? 0 : neighborSet.has(area) ? 1 : 2;
+      // при вводе: начинающиеся с запроса — выше
+      const nameLc = name.toLowerCase();
+      const queryBoost = q ? (nameLc.startsWith(q) ? -1 : nameLc.includes(q) ? 0 : 10) : 0;
+      return areaScore * 10 + queryBoost;
+    };
+
+    return subjects
+      .filter((s) => !formData.subjects.includes(s.name))
+      .filter((s) => (q ? s.name.toLowerCase().includes(q) : true))
+      .sort((a, b) => {
+        const sa = score(a.name, a.area);
+        const sb = score(b.name, b.area);
+        if (sa !== sb) return sa - sb;
+        return a.name.localeCompare(b.name, "ru");
+      })
+      .slice(0, 5);
+  }, [subjects, formData.subjects, subjectInput]);
+
   const tableColCount = useMemo(() => {
     // ФИО + Предметы + Мин + Макс + Действия = 5
     let count = 5;
@@ -326,15 +372,18 @@ export default function Teachers() {
                 </div>
                 {subjects.length > 0 && (
                   <div className="flex flex-wrap gap-1 mt-2">
-                    {subjects.filter(s => !formData.subjects.includes(s.name)).slice(0, 5).map(subject => (
+                    {rankedSubjectSuggestions.map((subject) => (
                       <Badge
                         key={subject.id}
                         variant="outline"
                         className="cursor-pointer hover:bg-accent"
-                        onClick={() => setFormData(prev => ({
-                          ...prev,
-                          subjects: [...prev.subjects, subject.name]
-                        }))}
+                        onClick={() =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            subjects: [...prev.subjects, subject.name],
+                          }))
+                        }
+                        title={subject.area}
                       >
                         + {subject.name}
                       </Badge>
