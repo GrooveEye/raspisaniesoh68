@@ -8,10 +8,10 @@ import {
   FileSpreadsheet,
   Settings,
   Home,
-  Download,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
+import { useEffect, useState } from "react";
 
 import {
   Sidebar,
@@ -43,7 +43,6 @@ const planningItems = [
 
 const toolsItems = [
   { title: "Импорт/Экспорт", url: "/import-export", icon: FileSpreadsheet },
-  { title: "Установка", url: "/install", icon: Download },
   { title: "Настройки", url: "/settings", icon: Settings },
 ];
 
@@ -52,6 +51,23 @@ export function AppSidebar() {
   const collapsed = state === "collapsed";
   const location = useLocation();
   const currentPath = location.pathname;
+
+  const [schoolName, setSchoolName] = useState<string>(() => {
+    if (typeof window === "undefined") return "Школа";
+    return localStorage.getItem("schoolName") || "Школа";
+  });
+
+  useEffect(() => {
+    const sync = () => setSchoolName(localStorage.getItem("schoolName") || "Школа");
+
+    window.addEventListener("storage", sync);
+    window.addEventListener("schoolNameChanged", sync as EventListener);
+
+    return () => {
+      window.removeEventListener("storage", sync);
+      window.removeEventListener("schoolNameChanged", sync as EventListener);
+    };
+  }, []);
 
   const isActive = (path: string) => currentPath === path;
 
@@ -63,9 +79,9 @@ export function AppSidebar() {
             <GraduationCap className="h-5 w-5" />
           </div>
           {!collapsed && (
-            <div className="flex flex-col">
+            <div className="flex flex-col min-w-0">
               <span className="font-semibold text-sidebar-foreground">Учебный план</span>
-              <span className="text-xs text-muted-foreground">Школа</span>
+              <span className="text-xs text-muted-foreground truncate">{schoolName}</span>
             </div>
           )}
         </div>

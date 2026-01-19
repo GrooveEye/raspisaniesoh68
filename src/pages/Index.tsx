@@ -1,4 +1,4 @@
-import { Users, GraduationCap, BookOpen, Palette, ArrowRight, Download } from "lucide-react";
+import { Users, GraduationCap, BookOpen, Palette, ArrowRight } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -25,13 +25,6 @@ export default function Index() {
             Автоматическое формирование учебного плана и распределение нагрузки
           </p>
         </div>
-
-        <Button asChild variant="secondary">
-          <Link to="/install" className="gap-2">
-            <Download className="h-4 w-4" />
-            Установить приложение
-          </Link>
-        </Button>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">

@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Plus, Pencil, Trash2, Search } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Plus, Pencil, Trash2, Search, SlidersHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -24,6 +24,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { useApp } from "@/context/AppContext";
@@ -31,7 +40,7 @@ import type { Teacher } from "@/types";
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
-const emptyTeacher: Omit<Teacher, 'id'> = {
+const emptyTeacher: Omit<Teacher, "id"> = {
   fullName: "",
   position: "Учитель",
   qualification: "без категории",
@@ -39,6 +48,7 @@ const emptyTeacher: Omit<Teacher, 'id'> = {
   minHours: 0,
   maxHours: 18,
   status: "штатный",
+  preferredGrades: [],
 };
 
 export default function Teachers() {
@@ -46,13 +56,54 @@ export default function Teachers() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingTeacher, setEditingTeacher] = useState<Teacher | null>(null);
-  const [formData, setFormData] = useState<Omit<Teacher, 'id'>>(emptyTeacher);
+  const [formData, setFormData] = useState<Omit<Teacher, "id">>(emptyTeacher);
   const [subjectInput, setSubjectInput] = useState("");
 
-  const filteredTeachers = teachers.filter(teacher =>
-    teacher.fullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    teacher.subjects.some(s => s.toLowerCase().includes(searchQuery.toLowerCase()))
+  const grades = useMemo(() => Array.from({ length: 11 }, (_, i) => i + 1), []);
+
+  type ColumnKey = "position" | "qualification" | "status" | "preferredGrades";
+
+  const [columnVisibility, setColumnVisibility] = useState<Record<ColumnKey, boolean>>(() => {
+    const raw = typeof window !== "undefined" ? localStorage.getItem("teachersColumnVisibility") : null;
+    if (raw) {
+      try {
+        return {
+          position: false,
+          qualification: false,
+          status: false,
+          preferredGrades: true,
+          ...(JSON.parse(raw) as Partial<Record<ColumnKey, boolean>>),
+        };
+      } catch {
+        // ignore
+      }
+    }
+    return { position: false, qualification: false, status: false, preferredGrades: true };
+  });
+
+  const updateColumnVisibility = (key: ColumnKey, value: boolean) => {
+    setColumnVisibility((prev) => {
+      const next = { ...prev, [key]: value };
+      localStorage.setItem("teachersColumnVisibility", JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const filteredTeachers = teachers.filter(
+    (teacher) =>
+      teacher.fullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      teacher.subjects.some((s) => s.toLowerCase().includes(searchQuery.toLowerCase()))
   );
+
+  const tableColCount = useMemo(() => {
+    // ФИО + Предметы + Мин + Макс + Действия = 5
+    let count = 5;
+    if (columnVisibility.position) count += 1;
+    if (columnVisibility.qualification) count += 1;
+    if (columnVisibility.status) count += 1;
+    if (columnVisibility.preferredGrades) count += 1;
+    return count;
+  }, [columnVisibility]);
 
   const handleOpenDialog = (teacher?: Teacher) => {
     if (teacher) {
@@ -65,6 +116,7 @@ export default function Teachers() {
         minHours: teacher.minHours,
         maxHours: teacher.maxHours,
         status: teacher.status,
+        preferredGrades: teacher.preferredGrades ?? [],
       });
     } else {
       setEditingTeacher(null);
@@ -227,6 +279,39 @@ export default function Teachers() {
               </div>
 
               <div className="space-y-2">
+                <Label>Приоритетные параллели</Label>
+                <p className="text-xs text-muted-foreground">
+                  Укажите классы (1–11), где учителю предпочтительнее вести предмет (учитывается при распределении нагрузки).
+                </p>
+                <div className="grid grid-cols-6 gap-2 sm:grid-cols-11">
+                  {grades.map((g) => {
+                    const checked = (formData.preferredGrades ?? []).includes(g);
+                    return (
+                      <label
+                        key={g}
+                        className="flex items-center gap-2 rounded-md border px-2 py-1 text-sm"
+                      >
+                        <Checkbox
+                          checked={checked}
+                          onCheckedChange={(next) => {
+                            const isOn = next === true;
+                            setFormData((prev) => {
+                              const current = prev.preferredGrades ?? [];
+                              const updated = isOn
+                                ? Array.from(new Set([...current, g])).sort((a, b) => a - b)
+                                : current.filter((x) => x !== g);
+                              return { ...prev, preferredGrades: updated };
+                            });
+                          }}
+                        />
+                        <span>{g}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="space-y-2">
                 <Label>Предметы</Label>
                 <div className="flex gap-2">
                   <Input
@@ -284,7 +369,7 @@ export default function Teachers() {
         </Dialog>
       </div>
 
-      <div className="flex items-center gap-4">
+      <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
@@ -294,7 +379,45 @@ export default function Teachers() {
             className="pl-9"
           />
         </div>
-        <p className="text-sm text-muted-foreground">
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button type="button" variant="outline" className="gap-2">
+              <SlidersHorizontal className="h-4 w-4" />
+              Колонки
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuLabel>Показать в таблице</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuCheckboxItem
+              checked={columnVisibility.preferredGrades}
+              onCheckedChange={(v) => updateColumnVisibility("preferredGrades", v === true)}
+            >
+              Приоритетные параллели
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem
+              checked={columnVisibility.position}
+              onCheckedChange={(v) => updateColumnVisibility("position", v === true)}
+            >
+              Должность
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem
+              checked={columnVisibility.qualification}
+              onCheckedChange={(v) => updateColumnVisibility("qualification", v === true)}
+            >
+              Квалификация
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem
+              checked={columnVisibility.status}
+              onCheckedChange={(v) => updateColumnVisibility("status", v === true)}
+            >
+              Статус
+            </DropdownMenuCheckboxItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <p className="text-sm text-muted-foreground whitespace-nowrap">
           Всего: {teachers.length} учителей
         </p>
       </div>
@@ -304,35 +427,37 @@ export default function Teachers() {
           <TableHeader>
             <TableRow>
               <TableHead>ФИО</TableHead>
-              <TableHead>Должность</TableHead>
-              <TableHead>Квалификация</TableHead>
+              {columnVisibility.position && <TableHead>Должность</TableHead>}
+              {columnVisibility.qualification && <TableHead>Квалификация</TableHead>}
               <TableHead>Предметы</TableHead>
               <TableHead>Мин. часов</TableHead>
               <TableHead>Макс. часов</TableHead>
-              <TableHead>Статус</TableHead>
+              {columnVisibility.preferredGrades && <TableHead>Приоритет</TableHead>}
+              {columnVisibility.status && <TableHead>Статус</TableHead>}
               <TableHead className="w-[100px]">Действия</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filteredTeachers.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
-                  {teachers.length === 0 
+                <TableCell colSpan={tableColCount} className="text-center py-8 text-muted-foreground">
+                  {teachers.length === 0
                     ? "Нет добавленных учителей. Нажмите «Добавить учителя» для начала."
-                    : "Ничего не найдено"
-                  }
+                    : "Ничего не найдено"}
                 </TableCell>
               </TableRow>
             ) : (
               filteredTeachers.map((teacher) => (
                 <TableRow key={teacher.id}>
                   <TableCell className="font-medium">{teacher.fullName}</TableCell>
-                  <TableCell>{teacher.position}</TableCell>
-                  <TableCell>
-                    <Badge variant="secondary" className={getQualificationColor(teacher.qualification)}>
-                      {teacher.qualification}
-                    </Badge>
-                  </TableCell>
+                  {columnVisibility.position && <TableCell>{teacher.position}</TableCell>}
+                  {columnVisibility.qualification && (
+                    <TableCell>
+                      <Badge variant="secondary" className={getQualificationColor(teacher.qualification)}>
+                        {teacher.qualification}
+                      </Badge>
+                    </TableCell>
+                  )}
                   <TableCell>
                     <div className="flex flex-wrap gap-1">
                       {teacher.subjects.slice(0, 3).map(subject => (
@@ -349,11 +474,20 @@ export default function Teachers() {
                   </TableCell>
                   <TableCell>{teacher.minHours} ч.</TableCell>
                   <TableCell>{teacher.maxHours} ч.</TableCell>
-                  <TableCell>
-                    <Badge variant="secondary" className={getStatusColor(teacher.status)}>
-                      {teacher.status}
-                    </Badge>
-                  </TableCell>
+                  {columnVisibility.preferredGrades && (
+                    <TableCell>
+                      {(teacher.preferredGrades ?? []).length > 0
+                        ? (teacher.preferredGrades ?? []).join(", ")
+                        : "—"}
+                    </TableCell>
+                  )}
+                  {columnVisibility.status && (
+                    <TableCell>
+                      <Badge variant="secondary" className={getStatusColor(teacher.status)}>
+                        {teacher.status}
+                      </Badge>
+                    </TableCell>
+                  )}
                   <TableCell>
                     <div className="flex gap-1">
                       <Button

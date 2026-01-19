@@ -33,6 +33,7 @@ const Settings = () => {
 
   const handleSaveSchoolName = () => {
     localStorage.setItem('schoolName', schoolName);
+    window.dispatchEvent(new Event('schoolNameChanged'));
     toast({ title: "Сохранено", description: "Название школы обновлено" });
   };
 
