@@ -11,8 +11,21 @@ try {
   // ignore
 }
 
-registerSW({
-  immediate: true,
-});
+// Service Workers are not supported on file:// (Electron packaged app).
+// If we try to register on file:// it can throw and prevent React from mounting,
+// resulting in a blank (dark) window.
+try {
+  const isFileProtocol = window.location.protocol === "file:";
+  const canUseSW =
+    !isFileProtocol &&
+    typeof navigator !== "undefined" &&
+    "serviceWorker" in navigator;
+
+  if (canUseSW) {
+    registerSW({ immediate: true });
+  }
+} catch {
+  // ignore
+}
 
 createRoot(document.getElementById("root")!).render(<App />);
