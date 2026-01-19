@@ -253,15 +253,20 @@ export default function Distribution() {
       
       const statusOrder = { 'штатный': 100, 'внутренний совместитель': 50, 'внешний совместитель': 0 };
       score += statusOrder[teacher.status];
-      
+
       if (teacherGrades[teacher.id].has(task.grade)) {
         score += 80;
       }
-      
+
+      const preferred = teacher.preferredGrades ?? [];
+      if (preferred.length > 0) {
+        score += preferred.includes(task.grade) ? 120 : -10;
+      }
+
       if (teacherAreas[teacher.id].has(task.subjectArea)) {
         score += 40;
       }
-      
+
       score -= teacherGrades[teacher.id].size * 15;
       
       if (teacherHours[teacher.id] < teacher.minHours) {
