@@ -48,6 +48,8 @@ const emptyTeacher: Omit<Teacher, "id"> = {
   minHours: 0,
   maxHours: 18,
   status: "штатный",
+  primaryRoom: "",
+  isUniversalRoom: false,
   preferredGrades: [],
 };
 
@@ -162,6 +164,8 @@ export default function Teachers() {
         minHours: teacher.minHours,
         maxHours: teacher.maxHours,
         status: teacher.status,
+        primaryRoom: teacher.primaryRoom ?? "",
+        isUniversalRoom: Boolean(teacher.isUniversalRoom),
         preferredGrades: teacher.preferredGrades ?? [],
       });
     } else {
@@ -257,6 +261,30 @@ export default function Teachers() {
                     onChange={(e) => setFormData(prev => ({ ...prev, position: e.target.value }))}
                     placeholder="Учитель"
                   />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="primaryRoom">Основной кабинет</Label>
+                  <Input
+                    id="primaryRoom"
+                    value={formData.primaryRoom ?? ""}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, primaryRoom: e.target.value }))}
+                    placeholder="101 / спортзал"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Универсальный кабинет</Label>
+                  <div className="flex items-center justify-between rounded-md border px-3 py-2">
+                    <span className="text-sm text-muted-foreground">Работает в разных кабинетах</span>
+                    <Checkbox
+                      checked={Boolean(formData.isUniversalRoom)}
+                      onCheckedChange={(v) =>
+                        setFormData((prev) => ({ ...prev, isUniversalRoom: v === true }))
+                      }
+                    />
+                  </div>
                 </div>
               </div>
 

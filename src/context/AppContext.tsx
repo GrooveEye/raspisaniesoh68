@@ -8,10 +8,10 @@ import type {
   LoadAssignment,
   ExtracurricularAssignment,
   CurriculumPlan,
-  Room,
   WeekGrid,
   TeacherAvailability,
   ScheduleLesson,
+  ScheduleAnchor,
 } from '@/types';
 
 interface AppContextType {
@@ -25,10 +25,10 @@ interface AppContextType {
   curriculumPlan: CurriculumPlan;
 
   // Расписание
-  rooms: Room[];
   weekGrid: WeekGrid;
   teacherAvailability: TeacherAvailability;
   scheduleLessons: ScheduleLesson[];
+  scheduleAnchors: ScheduleAnchor[];
   
   // Методы для учителей
   addTeacher: (teacher: Teacher) => void;
@@ -67,11 +67,6 @@ interface AppContextType {
   getCurriculumHours: (subjectId: string, classId: string) => number;
   clearCurriculumPlan: () => void;
 
-  // Кабинеты
-  addRoom: (room: Room) => void;
-  updateRoom: (id: string, room: Partial<Room>) => void;
-  deleteRoom: (id: string) => void;
-
   // Сетка недели
   setWeekGrid: (grid: WeekGrid) => void;
 
@@ -82,6 +77,11 @@ interface AppContextType {
   // Уроки
   upsertScheduleLesson: (lesson: ScheduleLesson) => void;
   deleteScheduleLesson: (id: string) => void;
+
+  // Закрепления
+  upsertScheduleAnchor: (anchor: ScheduleAnchor) => void;
+  deleteScheduleAnchor: (id: string) => void;
+  deleteScheduleAnchorFor: (classId: string, subjectId: string) => void;
   
   // Импорт/экспорт
   importData: (data: Partial<{
@@ -106,9 +106,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [curriculumPlan, setCurriculumPlan] = useLocalStorage<CurriculumPlan>('school-plan-curriculum', {});
 
   // Расписание
-  const [rooms, setRooms] = useLocalStorage<Room[]>('school-plan-rooms', []);
   const [weekGrid, setWeekGrid] = useLocalStorage<WeekGrid>('school-plan-week-grid', {
-    days: ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница'],
+    weekType: 5,
+    includeZeroLesson: true,
     slotsPerDay: 7,
   });
   const [teacherAvailability, setTeacherAvailability] = useLocalStorage<TeacherAvailability>(
@@ -117,6 +117,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
   const [scheduleLessons, setScheduleLessons] = useLocalStorage<ScheduleLesson[]>(
     'school-plan-schedule-lessons',
+    []
+  );
+  const [scheduleAnchors, setScheduleAnchors] = useLocalStorage<ScheduleAnchor[]>(
+    'school-plan-schedule-anchors',
     []
   );
 
@@ -229,16 +233,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setCurriculumPlan({});
   };
 
-  // Кабинеты
-  const addRoom = (room: Room) => setRooms(prev => [...prev, room]);
-  const updateRoom = (id: string, updates: Partial<Room>) => {
-    setRooms(prev => prev.map(r => (r.id === id ? { ...r, ...updates } : r)));
-  };
-  const deleteRoom = (id: string) => {
-    setRooms(prev => prev.filter(r => r.id !== id));
-    setScheduleLessons(prev => prev.map(l => (l.roomId === id ? { ...l, roomId: undefined } : l)));
-  };
-
   // Доступность учителей
   const setTeacherAvailabilityCell = (
     teacherId: string,
@@ -275,6 +269,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setScheduleLessons(prev => prev.filter(l => l.id !== id));
   };
 
+  // Закрепления
+  const upsertScheduleAnchor = (anchor: ScheduleAnchor) => {
+    setScheduleAnchors(prev => {
+      const idx = prev.findIndex(a => a.id === anchor.id);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = anchor;
+        return next;
+      }
+      return [...prev, anchor];
+    });
+  };
+
+  const deleteScheduleAnchor = (id: string) => {
+    setScheduleAnchors(prev => prev.filter(a => a.id !== id));
+  };
+
+  const deleteScheduleAnchorFor = (classId: string, subjectId: string) => {
+    setScheduleAnchors(prev => prev.filter(a => !(a.classId === classId && a.subjectId === subjectId)));
+  };
+
   // Импорт данных
   const importData = (data: Partial<{
     teachers: Teacher[];
@@ -300,11 +315,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setExtracurricularAssignments([]);
     setCurriculumPlan({});
 
-    setRooms([]);
     setTeacherAvailability({});
     setScheduleLessons([]);
+    setScheduleAnchors([]);
     setWeekGrid({
-      days: ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница'],
+      weekType: 5,
+      includeZeroLesson: true,
       slotsPerDay: 7,
     });
   };
@@ -316,10 +332,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     extracurriculars,
     loadAssignments,
     extracurricularAssignments,
-    rooms,
     weekGrid,
     teacherAvailability,
     scheduleLessons,
+    scheduleAnchors,
     addTeacher,
     updateTeacher,
     deleteTeacher,
@@ -344,14 +360,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setCurriculumHours,
     getCurriculumHours,
     clearCurriculumPlan,
-    addRoom,
-    updateRoom,
-    deleteRoom,
     setWeekGrid,
     setTeacherAvailability,
     setTeacherAvailabilityCell,
     upsertScheduleLesson,
     deleteScheduleLesson,
+    upsertScheduleAnchor,
+    deleteScheduleAnchor,
+    deleteScheduleAnchorFor,
     importData,
     clearAllData,
   };
