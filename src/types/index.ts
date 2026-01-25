@@ -108,6 +108,11 @@ export interface ScheduleLesson {
   isGroup?: boolean;
   groupNumber?: number;
   notes?: string;
+  /**
+   * Идентификатор «общего занятия» для нескольких классов одновременно.
+   * Используется, например, для внеурочки, которая идёт одной группой на всю параллель.
+   */
+  sharedGroupId?: string;
 }
 
 export interface ScheduleAnchor {

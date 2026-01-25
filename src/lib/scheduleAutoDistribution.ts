@@ -73,6 +73,17 @@
    weekGrid: WeekGrid;
    teacherAvailability: TeacherAvailability;
    existingLessons?: ScheduleLesson[];
+  /**
+   * «Общие занятия» (например, внеурочка на всю параллель одновременно):
+   * один слот у учителя, но отображается у нескольких классов.
+   */
+  sharedGroups?: Array<{
+    id: string;
+    teacherId: string;
+    subjectId: string;
+    classIds: string[];
+    hoursPerWeek: number;
+  }>;
  }): AutoDistributionResult {
    const {
      classes,
@@ -83,6 +94,7 @@
      weekGrid,
      teacherAvailability,
      existingLessons = [],
+    sharedGroups = [],
    } = params;
  
    const lessons: ScheduleLesson[] = [...existingLessons];
@@ -116,8 +128,14 @@
    // Индекс занятости кабинетов: день__слот -> Set<room>
    const roomOccupied = new Map<string, Set<string>>();
 
-    // Для эвристики «окна/целый день»: teacherId__day -> slots[]
-    const teacherDaySlots = new Map<string, number[]>();
+     // Для эвристики «окна/целый день»: teacherId__day -> slots[] (уникальные слоты)
+     const teacherDaySlots = new Map<string, number[]>();
+
+     const addTeacherDaySlot = (teacherId: string, day: string, slot: number) => {
+       const key = `${teacherId}__${day}`;
+       const prev = teacherDaySlots.get(key) || [];
+       if (!prev.includes(slot)) teacherDaySlots.set(key, [...prev, slot]);
+     };
  
    // Индексируем существующие уроки
    for (const l of lessons) {
@@ -127,9 +145,132 @@
        roomOccupied.set(key, (roomOccupied.get(key) || new Set()).add(l.room.toLowerCase()));
      }
 
-      const tdKey = `${l.teacherId}__${l.day}`;
-      teacherDaySlots.set(tdKey, [...(teacherDaySlots.get(tdKey) || []), l.slot]);
+       addTeacherDaySlot(l.teacherId, l.day, l.slot);
    }
+
+    // Сначала размещаем «общие занятия» (внеурочка на несколько классов одновременно)
+    for (const g of sharedGroups) {
+      const needed = Math.max(0, Number(g.hoursPerWeek) || 0);
+      if (needed <= 0) continue;
+      if (!g.classIds.length) continue;
+
+      // Если есть закрепления по этой внеурочке хотя бы у одного класса — требуем единый слот
+      const gAnchors = g.classIds
+        .map((classId) => anchorIndex.get(`${classId}__${g.subjectId}`))
+        .filter(Boolean) as ScheduleAnchor[];
+
+      const uniqueAnchorKey = new Set(gAnchors.map((a) => `${a.day}__${a.slot}`));
+      if (uniqueAnchorKey.size > 1) {
+        conflicts.push(
+          `Внеурочка (${g.subjectId}): закрепления у разных классов указывают на разные слоты — невозможно объединить в группу`
+        );
+        continue;
+      }
+
+      const forcedAnchor = gAnchors[0];
+
+      const teacher = teacherMap.get(g.teacherId);
+      const room = teacher?.primaryRoom || "";
+
+      let placed = 0;
+      for (const day of days) {
+        if (placed >= needed) break;
+        if (forcedAnchor && forcedAnchor.day !== day) continue;
+
+        const slotOrder = isExtrSubject(g.subjectId)
+          ? [...slots].sort((x, y) => (x === 0 ? -1 : y === 0 ? 1 : x - y))
+          : slots;
+
+        const candidates: { slot: number; score: number }[] = [];
+        for (const slot of slotOrder) {
+          if (placed >= needed) break;
+          if (forcedAnchor && forcedAnchor.slot !== slot) continue;
+
+          // все классы должны быть свободны в этом слоте
+          const classesFree = g.classIds.every(
+            (classId) => !lessons.some((l) => l.classId === classId && l.day === day && l.slot === slot)
+          );
+          if (!classesFree) continue;
+
+          // доступность учителя
+          const available = teacherAvailability[g.teacherId]?.[day]?.[slot] ?? true;
+          if (!available) continue;
+
+          // конфликт учителя
+          const key = `${day}__${slot}`;
+          const teachersInSlot = teacherOccupied.get(key) || new Set();
+          if (teachersInSlot.has(g.teacherId)) continue;
+
+          // конфликт кабинета (если кабинет фиксированный)
+          if (room) {
+            const roomsInSlot = roomOccupied.get(key) || new Set();
+            if (roomsInSlot.has(room.toLowerCase())) continue;
+          }
+
+          const tdKey = `${g.teacherId}__${day}`;
+          const currentTeacherSlots = teacherDaySlots.get(tdKey) || [];
+          const score = scoreCandidate({
+            teacherDaySlots: currentTeacherSlots,
+            candidateSlot: slot,
+            slot0Preferred: isExtrSubject(g.subjectId),
+          });
+          candidates.push({ slot, score });
+        }
+
+        candidates.sort((a, b) => b.score - a.score);
+
+        for (const cand of candidates) {
+          if (placed >= needed) break;
+          const slot = cand.slot;
+          const key = `${day}__${slot}`;
+
+          // повторная проверка, что все классы свободны
+          const classesFree = g.classIds.every(
+            (classId) => !lessons.some((l) => l.classId === classId && l.day === day && l.slot === slot)
+          );
+          if (!classesFree) continue;
+
+          const available = teacherAvailability[g.teacherId]?.[day]?.[slot] ?? true;
+          if (!available) continue;
+
+          const teachersInSlot = teacherOccupied.get(key) || new Set();
+          if (teachersInSlot.has(g.teacherId)) continue;
+
+          if (room) {
+            const roomsInSlot = roomOccupied.get(key) || new Set();
+            if (roomsInSlot.has(room.toLowerCase())) continue;
+          }
+
+          const sharedGroupId = `${g.id}__${placed + 1}`;
+          for (const classId of g.classIds) {
+            lessons.push({
+              id: crypto?.randomUUID?.() ?? String(Date.now() + Math.random()),
+              classId,
+              day,
+              slot,
+              subjectId: g.subjectId,
+              teacherId: g.teacherId,
+              room: room || undefined,
+              sharedGroupId,
+            });
+          }
+
+          teacherOccupied.set(key, teachersInSlot.add(g.teacherId));
+          addTeacherDaySlot(g.teacherId, day, slot);
+          if (room) {
+            roomOccupied.set(key, (roomOccupied.get(key) || new Set()).add(room.toLowerCase()));
+          }
+
+          placed++;
+        }
+      }
+
+      if (placed < needed) {
+        conflicts.push(
+          `Внеурочка (${g.subjectId}): не удалось разместить ${needed - placed} урок(ов) для общей группы`
+        );
+      }
+    }
  
    // Группируем задания по классам
    const assignmentsByClass = new Map<string, LoadAssignment[]>();
@@ -188,10 +329,7 @@
        };
        lessons.push(lesson);
        teacherOccupied.set(key, teachersInSlot.add(a.teacherId));
-        teacherDaySlots.set(
-          `${a.teacherId}__${anchor.day}`,
-          [...(teacherDaySlots.get(`${a.teacherId}__${anchor.day}`) || []), anchor.slot]
-        );
+         addTeacherDaySlot(a.teacherId, anchor.day, anchor.slot);
        if (room) {
          roomOccupied.set(key, (roomOccupied.get(key) || new Set()).add(room.toLowerCase()));
        }
@@ -290,8 +428,7 @@
             };
             lessons.push(lesson);
             teacherOccupied.set(key, teachersInSlot.add(a.teacherId));
-            const tdKey = `${a.teacherId}__${day}`;
-            teacherDaySlots.set(tdKey, [...(teacherDaySlots.get(tdKey) || []), slot]);
+            addTeacherDaySlot(a.teacherId, day, slot);
             if (room) {
               roomOccupied.set(key, (roomOccupied.get(key) || new Set()).add(room.toLowerCase()));
             }
