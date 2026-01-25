@@ -52,6 +52,7 @@
      scheduleLessons,
      scheduleAnchors,
      setWeekGrid,
+    setScheduleLessons,
      upsertScheduleLesson,
      deleteScheduleLesson,
      setTeacherAvailabilityCell,
@@ -159,25 +160,19 @@
        });
    }, [scheduleAnchors, classes, subjects, extracurriculars]);
  
-   const handleAutoDistribute = () => {
-     for (const l of scheduleLessons) {
-       deleteScheduleLesson(l.id);
-     }
- 
-     const result = autoDistributeSchedule({
-       classes,
-       loadAssignments,
-       teachers,
-       rooms,
-       anchors: scheduleAnchors.filter((a) => a.subjectId),
-       weekGrid,
-       teacherAvailability,
-       existingLessons: [],
-     });
- 
-     for (const l of result.lessons) {
-       upsertScheduleLesson(l);
-     }
+    const handleAutoDistribute = () => {
+      const result = autoDistributeSchedule({
+        classes,
+        loadAssignments,
+        teachers,
+        rooms,
+        anchors: scheduleAnchors.filter((a) => a.subjectId),
+        weekGrid,
+        teacherAvailability,
+        existingLessons: [],
+      });
+
+      setScheduleLessons(result.lessons);
  
      setAutoDistributeOpen(false);
      toast({
@@ -250,7 +245,7 @@
        <Tabs defaultValue="schedule">
          <TabsList>
            <TabsTrigger value="schedule">Расписание (по дням)</TabsTrigger>
-           <TabsTrigger value="schedule-alt">Расписание (по урокам)</TabsTrigger>
+            <TabsTrigger value="schedule-alt">Расписание (по классам)</TabsTrigger>
            <TabsTrigger value="errors">
              Ошибки {byLessonId.size > 0 ? `(${byLessonId.size})` : ""}
            </TabsTrigger>
