@@ -32,11 +32,11 @@ import {
 const mainMenuItems = [{ title: "Главная", url: "/", icon: Home }];
 
 const referenceItems = [
-  { title: "Учителя", url: "/teachers", icon: Users },
-  { title: "Классы", url: "/classes", icon: GraduationCap },
   { title: "Предметы", url: "/subjects", icon: BookOpen },
-  { title: "Кабинеты", url: "/rooms", icon: DoorClosed },
   { title: "Внеурочная деятельность", url: "/extracurricular", icon: Palette },
+  { title: "Классы", url: "/classes", icon: GraduationCap },
+  { title: "Кабинеты", url: "/rooms", icon: DoorClosed },
+  { title: "Учителя", url: "/teachers", icon: Users },
 ];
 
 const planningItems = [
