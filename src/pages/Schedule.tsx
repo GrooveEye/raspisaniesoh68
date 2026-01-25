@@ -1,4 +1,4 @@
- import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
  import { useApp } from "@/context/AppContext";
  import { Button } from "@/components/ui/button";
  import { Download, Sparkles, Filter } from "lucide-react";
@@ -6,6 +6,7 @@
  import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
  import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
  import { Switch } from "@/components/ui/switch";
+import { Input } from "@/components/ui/input";
  import {
    DropdownMenu,
    DropdownMenuCheckboxItem,
@@ -34,6 +35,12 @@
  import { autoDistributeSchedule } from "@/lib/scheduleAutoDistribution";
  import { exportScheduleToExcel } from "@/lib/scheduleExport";
  import { toast } from "@/components/ui/use-toast";
+import {
+  buildExtracurricularLoadAssignments,
+  buildExtracurricularSubjects,
+  EXTRACURRICULAR_SUBJECT_PREFIX,
+  type ExtracurricularHoursByAssignment,
+} from "@/lib/schedule/extracurricularAsSubjects";
  
  function classLabel(grade: number, letter: string) {
    return `${grade}${letter}`;
@@ -47,6 +54,7 @@
      rooms,
      extracurriculars,
      loadAssignments,
+      extracurricularAssignments,
      weekGrid,
      teacherAvailability,
      scheduleLessons,
@@ -159,20 +167,103 @@
          return a.slot - b.slot;
        });
    }, [scheduleAnchors, classes, subjects, extracurriculars]);
- 
-    const handleAutoDistribute = () => {
-      const result = autoDistributeSchedule({
-        classes,
-        loadAssignments,
-        teachers,
-        rooms,
-        anchors: scheduleAnchors.filter((a) => a.subjectId),
-        weekGrid,
-        teacherAvailability,
-        existingLessons: [],
-      });
 
-      setScheduleLessons(result.lessons);
+    const extracurricularSubjects = useMemo(
+      () => buildExtracurricularSubjects(extracurriculars),
+      [extracurriculars]
+    );
+
+    const combinedSubjects = useMemo(
+      () => [...subjects, ...extracurricularSubjects],
+      [subjects, extracurricularSubjects]
+    );
+
+    // Ручное распределение часов внеурочки по классам (перед запуском автораспределения)
+    const [extracurricularHours, setExtracurricularHours] = useState<ExtracurricularHoursByAssignment>({});
+
+    useEffect(() => {
+      if (!autoDistributeOpen) return;
+      // Инициализируем структуру, чтобы inputs были контролируемыми
+      setExtracurricularHours((prev) => {
+        const next: ExtracurricularHoursByAssignment = { ...prev };
+        for (const a of extracurricularAssignments) {
+          if (!next[a.id]) next[a.id] = {};
+          const targetClasses = sortedClasses.filter((c) => a.targetGrades.includes(c.grade));
+          for (const c of targetClasses) {
+            if (next[a.id][c.id] === undefined) next[a.id][c.id] = 0;
+          }
+        }
+        return next;
+      });
+    }, [autoDistributeOpen, extracurricularAssignments, sortedClasses]);
+
+    const extracurricularValidation = useMemo(() => {
+      const byId = new Map<
+        string,
+        {
+          total: number;
+          sum: number;
+          ok: boolean;
+          targetClassIds: string[];
+        }
+      >();
+
+      for (const a of extracurricularAssignments) {
+        const targetClassIds = sortedClasses
+          .filter((c) => a.targetGrades.includes(c.grade))
+          .map((c) => c.id);
+        const sum = targetClassIds.reduce((acc, classId) => {
+          const v = extracurricularHours[a.id]?.[classId] ?? 0;
+          return acc + (Number(v) || 0);
+        }, 0);
+        const total = a.hoursPerWeek;
+        byId.set(a.id, {
+          total,
+          sum,
+          ok: total === sum,
+          targetClassIds,
+        });
+      }
+
+      const allOk = Array.from(byId.values()).every((x) => x.ok);
+      return { byId, allOk };
+    }, [extracurricularAssignments, extracurricularHours, sortedClasses]);
+ 
+     const handleAutoDistribute = () => {
+       const extracurricularLoad = buildExtracurricularLoadAssignments({
+         extracurricularAssignments,
+         classes,
+         hoursByAssignment: extracurricularHours,
+       });
+
+       const mergedAssignments = [...loadAssignments, ...extracurricularLoad];
+
+       // Превращаем закрепления внеурочки в «закрепления псевдо‑предметов»
+       const mergedAnchors = scheduleAnchors
+         .map((a) => {
+           if (a.subjectId) return a;
+           if (a.extracurricularId) {
+             return {
+               ...a,
+               subjectId: `${EXTRACURRICULAR_SUBJECT_PREFIX}${a.extracurricularId}`,
+             };
+           }
+           return null;
+         })
+         .filter(Boolean);
+
+       const result = autoDistributeSchedule({
+         classes,
+         loadAssignments: mergedAssignments,
+         teachers,
+         rooms,
+         anchors: mergedAnchors as any,
+         weekGrid,
+         teacherAvailability,
+         existingLessons: [],
+       });
+
+       setScheduleLessons(result.lessons);
  
      setAutoDistributeOpen(false);
      toast({
@@ -187,7 +278,7 @@
      exportScheduleToExcel({
        lessons: scheduleLessons,
        classes,
-       subjects,
+        subjects: combinedSubjects,
        teachers,
        weekGrid,
      });
@@ -267,7 +358,7 @@
                slots={slots}
                classes={filteredClasses}
                lessons={scheduleLessons}
-               subjects={subjects}
+                subjects={combinedSubjects}
                teachers={teachers}
                issuesByLessonId={issuesByLessonId}
                onCellClick={openEditor}
@@ -289,7 +380,7 @@
                slots={slots}
                classes={filteredClasses}
                lessons={scheduleLessons}
-               subjects={subjects}
+                subjects={combinedSubjects}
                teachers={teachers}
                issuesByLessonId={issuesByLessonId}
                onCellClick={openEditor}
@@ -313,7 +404,7 @@
                      const lesson = scheduleLessons.find((l) => l.id === lessonId);
                      if (!lesson) return null;
                      const cls = classes.find((c) => c.id === lesson.classId);
-                     const subj = subjects.find((s) => s.id === lesson.subjectId);
+                      const subj = combinedSubjects.find((s) => s.id === lesson.subjectId);
                      const teach = teachers.find((t) => t.id === lesson.teacherId);
                      return (
                        <div key={lessonId} className="rounded-md border p-3 space-y-2">
@@ -489,9 +580,13 @@
          onOpenChange={setEditorOpen}
          defaults={editorDefaults}
          classes={classes}
-         subjects={subjects}
+          subjects={combinedSubjects}
          teachers={teachers}
-         loadAssignments={loadAssignments}
+          loadAssignments={[...loadAssignments, ...buildExtracurricularLoadAssignments({
+            extracurricularAssignments,
+            classes,
+            hoursByAssignment: extracurricularHours,
+          })]}
          anchors={scheduleAnchors}
          upsertAnchor={upsertScheduleAnchor}
          deleteAnchorFor={deleteScheduleAnchorFor}
@@ -515,9 +610,86 @@
                Существующие уроки будут заменены. Продолжить?
              </AlertDialogDescription>
            </AlertDialogHeader>
+
+            {extracurricularAssignments.length ? (
+              <div className="mt-4 space-y-4">
+                <div className="text-sm text-muted-foreground">
+                  Внеурочка распределяется как «обычные предметы», но часы нужно разложить по классам вручную
+                  (сумма по классам должна совпадать с общим количеством часов по назначению).
+                </div>
+
+                <div className="space-y-4 max-h-[40vh] overflow-auto rounded-md border p-3">
+                  {extracurricularAssignments.map((a) => {
+                    const ext = extracurriculars.find((e) => e.id === a.extracurricularId);
+                    const teacher = teachers.find((t) => t.id === a.teacherId);
+                    const v = extracurricularValidation.byId.get(a.id);
+                    const targetClasses = sortedClasses.filter((c) => a.targetGrades.includes(c.grade));
+
+                    return (
+                      <div key={a.id} className="space-y-2">
+                        <div className="flex flex-col gap-1">
+                          <div className="font-medium">
+                            {ext?.name || "Внеурочка"} — {teacher?.fullName || "Учитель"}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            Целевые параллели: {a.targetGrades.join(", ")}; всего часов: {a.hoursPerWeek};
+                            сумма по классам: {v?.sum ?? 0}{" "}
+                            {v?.ok ? "(OK)" : "(не совпадает)"}
+                          </div>
+                        </div>
+
+                        {targetClasses.length === 0 ? (
+                          <div className="text-xs text-muted-foreground">
+                            Нет классов подходящих параллелей.
+                          </div>
+                        ) : (
+                          <div
+                            className="grid gap-2"
+                            style={{
+                              gridTemplateColumns: `repeat(${Math.min(targetClasses.length, 4)}, minmax(140px, 1fr))`,
+                            }}
+                          >
+                            {targetClasses.map((c) => (
+                              <div key={c.id} className="space-y-1">
+                                <div className="text-xs text-muted-foreground">{classLabel(c.grade, c.letter)}</div>
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  step={1}
+                                  value={extracurricularHours[a.id]?.[c.id] ?? 0}
+                                  onChange={(e) => {
+                                    const raw = e.target.value;
+                                    const nextVal = raw === "" ? 0 : Math.max(0, Math.floor(Number(raw) || 0));
+                                    setExtracurricularHours((prev) => ({
+                                      ...prev,
+                                      [a.id]: { ...(prev[a.id] || {}), [c.id]: nextVal },
+                                    }));
+                                  }}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+
            <AlertDialogFooter>
              <AlertDialogCancel>Отмена</AlertDialogCancel>
-             <AlertDialogAction onClick={handleAutoDistribute}>Запустить</AlertDialogAction>
+              <AlertDialogAction
+                onClick={handleAutoDistribute}
+                disabled={extracurricularAssignments.length > 0 && !extracurricularValidation.allOk}
+                title={
+                  extracurricularAssignments.length > 0 && !extracurricularValidation.allOk
+                    ? "Суммы часов внеурочки по классам должны совпадать с общим количеством часов"
+                    : undefined
+                }
+              >
+                Запустить
+              </AlertDialogAction>
            </AlertDialogFooter>
          </AlertDialogContent>
        </AlertDialog>

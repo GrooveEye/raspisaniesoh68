@@ -20,17 +20,24 @@ export function getScheduleIssues(params: {
 }) {
   const { lessons, availability, anchors = [], selectedClassId } = params;
 
+  const EXTR_PREFIX = "extr_";
+
   const issues: ScheduleIssue[] = [];
 
   // For fast lookups: (day|slot|teacherId) and (day|slot|room)
   const byTeacher = new Map<string, ScheduleLesson[]>();
   const byRoom = new Map<string, ScheduleLesson[]>();
 
-  // В расписании сейчас проверяем только закрепления по предметам
+  // В расписании проверяем закрепления по предметам и по внеурочке (как псевдо‑предметы)
   const anchorByClassSubject = new Map<string, ScheduleAnchor>();
   for (const a of anchors) {
-    if (!a.subjectId) continue;
-    anchorByClassSubject.set(`${a.classId}__${a.subjectId}`, a);
+    if (a.subjectId) {
+      anchorByClassSubject.set(`${a.classId}__${a.subjectId}`, a);
+      continue;
+    }
+    if (a.extracurricularId) {
+      anchorByClassSubject.set(`${a.classId}__${EXTR_PREFIX}${a.extracurricularId}`, a);
+    }
   }
 
   for (const l of lessons) {
