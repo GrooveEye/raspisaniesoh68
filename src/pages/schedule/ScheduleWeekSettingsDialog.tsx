@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import type { WeekGrid } from "@/types";
+import { useEffect, useState } from "react";
+import type { WeekGrid, WeekType } from "@/types";
 import {
   Dialog,
   DialogContent,
@@ -12,6 +12,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/use-toast";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 
 export function ScheduleWeekSettingsDialog(props: {
   open: boolean;
@@ -20,32 +28,19 @@ export function ScheduleWeekSettingsDialog(props: {
   onSave: (grid: WeekGrid) => void;
 }) {
   const { open, onOpenChange, value, onSave } = props;
-  const [daysCsv, setDaysCsv] = useState("");
+  const [weekType, setWeekType] = useState<WeekType>(5);
+  const [includeZeroLesson, setIncludeZeroLesson] = useState(false);
   const [slotsPerDay, setSlotsPerDay] = useState("7");
 
   useEffect(() => {
     if (!open) return;
-    setDaysCsv(value.days.join(", "));
+    setWeekType(value.weekType);
+    setIncludeZeroLesson(value.includeZeroLesson);
     setSlotsPerDay(String(value.slotsPerDay));
-  }, [open, value.days, value.slotsPerDay]);
-
-  const parsedDays = useMemo(() => {
-    return daysCsv
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
-  }, [daysCsv]);
+  }, [open, value.weekType, value.includeZeroLesson, value.slotsPerDay]);
 
   const handleSave = () => {
     const n = Number(slotsPerDay);
-    if (parsedDays.length < 3) {
-      toast({
-        title: "Проверьте дни недели",
-        description: "Нужно минимум 3 дня (через запятую).",
-        variant: "destructive",
-      });
-      return;
-    }
     if (!Number.isFinite(n) || n < 1 || n > 12) {
       toast({
         title: "Проверьте количество уроков",
@@ -54,7 +49,7 @@ export function ScheduleWeekSettingsDialog(props: {
       });
       return;
     }
-    onSave({ days: parsedDays, slotsPerDay: n });
+    onSave({ weekType, includeZeroLesson, slotsPerDay: n });
     onOpenChange(false);
     toast({ title: "Сетка недели обновлена" });
   };
@@ -70,18 +65,30 @@ export function ScheduleWeekSettingsDialog(props: {
         </DialogHeader>
 
         <div className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="days">Дни (через запятую)</Label>
-            <Input
-              id="days"
-              value={daysCsv}
-              onChange={(e) => setDaysCsv(e.target.value)}
-              placeholder="Понедельник, Вторник, ..."
-            />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label>Учебная неделя</Label>
+              <Select value={String(weekType)} onValueChange={(v) => setWeekType(Number(v) as WeekType)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="5">5-дневка</SelectItem>
+                  <SelectItem value="6">6-дневка</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>0-й урок</Label>
+              <div className="flex items-center justify-between rounded-md border p-3">
+                <div className="text-sm text-muted-foreground">Показывать слот 0</div>
+                <Switch checked={includeZeroLesson} onCheckedChange={setIncludeZeroLesson} />
+              </div>
+            </div>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="slots">Уроков (слотов) в день</Label>
+            <Label htmlFor="slots">Уроков в день</Label>
             <Input
               id="slots"
               type="number"

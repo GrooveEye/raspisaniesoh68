@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 
-import type { Room, ScheduleLesson } from "@/types";
+import type { ScheduleAnchor, ScheduleLesson } from "@/types";
 import { getScheduleIssues } from "@/pages/schedule/scheduleUtils";
 import { ScheduleEditorDialog } from "@/pages/schedule/ScheduleEditorDialog";
 import { ScheduleWeekSettingsDialog } from "@/pages/schedule/ScheduleWeekSettingsDialog";
@@ -29,18 +29,31 @@ export default function Schedule() {
     subjects,
     teachers,
     loadAssignments,
-    rooms,
     weekGrid,
     teacherAvailability,
     scheduleLessons,
+    scheduleAnchors,
     setWeekGrid,
     upsertScheduleLesson,
     deleteScheduleLesson,
-    addRoom,
-    updateRoom,
-    deleteRoom,
     setTeacherAvailabilityCell,
+    upsertScheduleAnchor,
+    deleteScheduleAnchor,
+    deleteScheduleAnchorFor,
   } = useApp();
+
+  const days = useMemo(() => {
+    const base = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница"];
+    return weekGrid.weekType === 6 ? [...base, "Суббота"] : base;
+  }, [weekGrid.weekType]);
+
+  const slots = useMemo(() => {
+    const start = weekGrid.includeZeroLesson ? 0 : 1;
+    const end = weekGrid.slotsPerDay; // 1..N or 0..N
+    const arr: number[] = [];
+    for (let s = start; s <= end; s++) arr.push(s);
+    return arr;
+  }, [weekGrid.includeZeroLesson, weekGrid.slotsPerDay]);
 
   const sortedClasses = useMemo(() => {
     return classes
@@ -65,8 +78,13 @@ export default function Schedule() {
   );
 
   const { byLessonId, selectedClassIssues } = useMemo(() => {
-    return getScheduleIssues({ lessons: scheduleLessons, availability: teacherAvailability, selectedClassId });
-  }, [scheduleLessons, teacherAvailability, selectedClassId]);
+    return getScheduleIssues({
+      lessons: scheduleLessons,
+      availability: teacherAvailability,
+      anchors: scheduleAnchors,
+      selectedClassId,
+    });
+  }, [scheduleLessons, teacherAvailability, scheduleAnchors, selectedClassId]);
 
   const issuesByLessonId = byLessonId;
 
@@ -88,23 +106,24 @@ export default function Schedule() {
     setEditorOpen(true);
   };
 
-  // ===== Rooms tab =====
-  const [newRoomName, setNewRoomName] = useState("");
-  const [newRoomType, setNewRoomType] = useState("");
   const [availabilityTeacherId, setAvailabilityTeacherId] = useState<string>(teachers[0]?.id || "");
 
-  const upsertRoomQuick = () => {
-    const name = newRoomName.trim();
-    if (!name) return;
-    const room: Room = {
-      id: crypto?.randomUUID?.() ?? String(Date.now()),
-      name,
-      type: newRoomType.trim() || undefined,
-    };
-    addRoom(room);
-    setNewRoomName("");
-    setNewRoomType("");
-  };
+  const sortedAnchors = useMemo(() => {
+    return scheduleAnchors
+      .slice()
+      .sort((a, b) => {
+        const ca = classes.find((c) => c.id === a.classId);
+        const cb = classes.find((c) => c.id === b.classId);
+        const cla = ca ? `${ca.grade}${ca.letter}` : "";
+        const clb = cb ? `${cb.grade}${cb.letter}` : "";
+        if (cla !== clb) return cla.localeCompare(clb, "ru");
+        const sa = subjects.find((s) => s.id === a.subjectId)?.name || "";
+        const sb = subjects.find((s) => s.id === b.subjectId)?.name || "";
+        if (sa !== sb) return sa.localeCompare(sb, "ru");
+        if (a.day !== b.day) return a.day.localeCompare(b.day, "ru");
+        return a.slot - b.slot;
+      });
+  }, [scheduleAnchors, classes, subjects]);
 
   return (
     <div className="space-y-6">
@@ -138,8 +157,8 @@ export default function Schedule() {
       <Tabs defaultValue="schedule">
         <TabsList>
           <TabsTrigger value="schedule">Расписание</TabsTrigger>
-          <TabsTrigger value="rooms">Кабинеты</TabsTrigger>
           <TabsTrigger value="availability">Доступность</TabsTrigger>
+          <TabsTrigger value="anchors">Закрепления</TabsTrigger>
         </TabsList>
 
         <TabsContent value="schedule" className="space-y-4">
@@ -167,30 +186,29 @@ export default function Schedule() {
                 <div
                   className="grid"
                   style={{
-                    gridTemplateColumns: `minmax(80px, 120px) repeat(${weekGrid.days.length}, minmax(180px, 1fr))`,
+                    gridTemplateColumns: `minmax(80px, 120px) repeat(${days.length}, minmax(180px, 1fr))`,
                   }}
                 >
                   <div className="sticky top-0 bg-card border-b p-3 font-medium">Урок</div>
-                  {weekGrid.days.map((d) => (
+                  {days.map((d) => (
                     <div key={d} className="sticky top-0 bg-card border-b p-3 font-medium">
                       {d}
                     </div>
                   ))}
 
-                  {Array.from({ length: weekGrid.slotsPerDay }).map((_, i) => {
-                    const slot = i + 1;
+                  {slots.map((slot) => {
                     return (
                       <div key={`row-${slot}`} className="contents">
                         <div key={`slot-${slot}`} className="border-b p-3 text-sm text-muted-foreground">
-                          {slot}-й
+                          {slot === 0 ? "0-й" : `${slot}-й`}
                         </div>
-                        {weekGrid.days.map((day) => {
+                        {days.map((day) => {
                           const cellKey = `${day}__${slot}`;
                           const lesson = (lessonsByCell.get(cellKey) || [])[0];
                           const hasIssues = lesson ? (issuesByLessonId.get(lesson.id) || []).length > 0 : false;
                           const subject = lesson ? subjects.find((s) => s.id === lesson.subjectId) : null;
                           const teacher = lesson ? teachers.find((t) => t.id === lesson.teacherId) : null;
-                          const room = lesson?.roomId ? rooms.find((r) => r.id === lesson.roomId) : null;
+                          const room = lesson?.room;
 
                           return (
                             <button
@@ -206,9 +224,7 @@ export default function Schedule() {
                                 <div className="space-y-1">
                                   <div className="font-medium leading-snug">{subject?.name || "—"}</div>
                                   <div className="text-sm text-muted-foreground leading-snug">{teacher?.fullName || "—"}</div>
-                                  {room ? (
-                                    <div className="text-xs text-muted-foreground">{room.name}</div>
-                                  ) : null}
+                                  {room ? <div className="text-xs text-muted-foreground">{room}</div> : null}
                                 </div>
                               ) : (
                                 <div className="text-sm text-muted-foreground">Добавить…</div>
@@ -223,70 +239,6 @@ export default function Schedule() {
               </div>
             </>
           )}
-        </TabsContent>
-
-        <TabsContent value="rooms" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Кабинеты / ресурсы</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="space-y-2">
-                  <Label>Название</Label>
-                  <Input value={newRoomName} onChange={(e) => setNewRoomName(e.target.value)} placeholder="101" />
-                </div>
-                <div className="space-y-2">
-                  <Label>Тип (опционально)</Label>
-                  <Input value={newRoomType} onChange={(e) => setNewRoomType(e.target.value)} placeholder="спортзал" />
-                </div>
-                <div className="flex items-end">
-                  <Button onClick={upsertRoomQuick} disabled={!newRoomName.trim()}>
-                    Добавить
-                  </Button>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                {rooms.length === 0 ? (
-                  <div className="text-sm text-muted-foreground">Пока нет кабинетов.</div>
-                ) : (
-                  <div className="space-y-2">
-                    {rooms
-                      .slice()
-                      .sort((a, b) => a.name.localeCompare(b.name, "ru"))
-                      .map((r) => (
-                        <div key={r.id} className="flex items-center justify-between rounded-md border p-3">
-                          <div className="min-w-0">
-                            <div className="font-medium truncate">{r.name}</div>
-                            {r.type ? <div className="text-sm text-muted-foreground truncate">{r.type}</div> : null}
-                          </div>
-                          <div className="flex gap-2">
-                            <Button
-                              variant="secondary"
-                              onClick={() => {
-                                const name = prompt("Название кабинета", r.name);
-                                if (name === null) return;
-                                const type = prompt("Тип (опционально)", r.type || "");
-                                updateRoom(r.id, {
-                                  name: name.trim() || r.name,
-                                  type: type?.trim() || undefined,
-                                });
-                              }}
-                            >
-                              Изменить
-                            </Button>
-                            <Button variant="destructive" onClick={() => deleteRoom(r.id)}>
-                              Удалить
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
         </TabsContent>
 
         <TabsContent value="availability" className="space-y-4">
@@ -325,24 +277,23 @@ export default function Schedule() {
                   <div
                     className="grid"
                     style={{
-                      gridTemplateColumns: `minmax(80px, 120px) repeat(${weekGrid.days.length}, minmax(140px, 1fr))`,
+                      gridTemplateColumns: `minmax(80px, 120px) repeat(${days.length}, minmax(140px, 1fr))`,
                     }}
                   >
                     <div className="sticky top-0 bg-card border-b p-3 font-medium">Урок</div>
-                    {weekGrid.days.map((d) => (
+                    {days.map((d) => (
                       <div key={d} className="sticky top-0 bg-card border-b p-3 font-medium">
                         {d}
                       </div>
                     ))}
 
-                    {Array.from({ length: weekGrid.slotsPerDay }).map((_, i) => {
-                      const slot = i + 1;
+                    {slots.map((slot) => {
                       return (
                         <div key={`av-row-${slot}`} className="contents">
                           <div key={`slot-av-${slot}`} className="border-b p-3 text-sm text-muted-foreground">
-                            {slot}-й
+                            {slot === 0 ? "0-й" : `${slot}-й`}
                           </div>
-                          {weekGrid.days.map((day) => {
+                          {days.map((day) => {
                             const available =
                               teacherAvailability[availabilityTeacherId]?.[day]?.[slot] ?? true;
                             return (
@@ -370,6 +321,58 @@ export default function Schedule() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        <TabsContent value="anchors" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Закрепления (класс + предмет → день/урок)</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {sortedAnchors.length === 0 ? (
+                <div className="text-sm text-muted-foreground">
+                  Пока нет закреплений. Их можно добавить из редактора урока (включите переключатель «Закрепление предмета»).
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {sortedAnchors.map((a) => {
+                    const c = classes.find((x) => x.id === a.classId);
+                    const s = subjects.find((x) => x.id === a.subjectId);
+                    const label = `${c ? `${c.grade}${c.letter}` : "?"} — ${s?.name || "?"}`;
+                    return (
+                      <div key={a.id} className="flex items-center justify-between rounded-md border p-3">
+                        <div className="min-w-0">
+                          <div className="font-medium truncate">{label}</div>
+                          <div className="text-sm text-muted-foreground">
+                            {a.day}, {a.slot === 0 ? "0-й" : `${a.slot}-й`}
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="secondary"
+                            onClick={() => {
+                              const day = prompt("День", a.day);
+                              if (day === null) return;
+                              const slotStr = prompt("Урок (номер)", String(a.slot));
+                              if (slotStr === null) return;
+                              const slot = Number(slotStr);
+                              if (!Number.isFinite(slot)) return;
+                              upsertScheduleAnchor({ ...a, day: day.trim() || a.day, slot });
+                            }}
+                          >
+                            Изменить
+                          </Button>
+                          <Button variant="destructive" onClick={() => deleteScheduleAnchor(a.id)}>
+                            Удалить
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
 
       <ScheduleEditorDialog
@@ -379,8 +382,10 @@ export default function Schedule() {
         classes={classes}
         subjects={subjects}
         teachers={teachers}
-        rooms={rooms}
         loadAssignments={loadAssignments}
+        anchors={scheduleAnchors}
+        upsertAnchor={upsertScheduleAnchor}
+        deleteAnchorFor={deleteScheduleAnchorFor}
         onSave={upsertScheduleLesson}
         onDelete={deleteScheduleLesson}
       />

@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import type { LoadAssignment, Room, ScheduleLesson, SchoolClass, Subject, Teacher } from "@/types";
+import type {
+  LoadAssignment,
+  ScheduleAnchor,
+  ScheduleLesson,
+  SchoolClass,
+  Subject,
+  Teacher,
+} from "@/types";
 
 import {
   Dialog,
@@ -39,8 +46,10 @@ export function ScheduleEditorDialog(props: {
   classes: SchoolClass[];
   subjects: Subject[];
   teachers: Teacher[];
-  rooms: Room[];
   loadAssignments: LoadAssignment[];
+  anchors: ScheduleAnchor[];
+  upsertAnchor: (anchor: ScheduleAnchor) => void;
+  deleteAnchorFor: (classId: string, subjectId: string) => void;
   onSave: (lesson: ScheduleLesson) => void;
   onDelete?: (lessonId: string) => void;
 }) {
@@ -51,28 +60,32 @@ export function ScheduleEditorDialog(props: {
     classes,
     subjects,
     teachers,
-    rooms,
     loadAssignments,
+    anchors,
+    upsertAnchor,
+    deleteAnchorFor,
     onSave,
     onDelete,
   } = props;
 
   const [subjectId, setSubjectId] = useState("");
   const [teacherId, setTeacherId] = useState("");
-  const [roomId, setRoomId] = useState<string>("");
+  const [room, setRoom] = useState<string>("");
   const [isGroup, setIsGroup] = useState(false);
   const [groupNumber, setGroupNumber] = useState("1");
   const [notes, setNotes] = useState("");
+  const [pinToSlot, setPinToSlot] = useState(false);
 
   useEffect(() => {
     if (!open || !defaults) return;
     const ex = defaults.existing;
     setSubjectId(ex?.subjectId || "");
     setTeacherId(ex?.teacherId || "");
-    setRoomId(ex?.roomId || "");
+    setRoom(ex?.room || "");
     setIsGroup(Boolean(ex?.isGroup));
     setGroupNumber(String(ex?.groupNumber || 1));
     setNotes(ex?.notes || "");
+    setPinToSlot(false);
   }, [open, defaults]);
 
   const availableSubjectIds = useMemo(() => {
@@ -101,6 +114,23 @@ export function ScheduleEditorDialog(props: {
   const subjectName = subjects.find((s) => s.id === subjectId)?.name;
   const teacherName = teachers.find((t) => t.id === teacherId)?.fullName;
 
+  const selectedTeacher = teachers.find((t) => t.id === teacherId);
+  const teacherRoomLocked = Boolean(selectedTeacher?.primaryRoom && !selectedTeacher?.isUniversalRoom);
+
+  // If teacher has fixed room, auto-fill.
+  useEffect(() => {
+    if (!open) return;
+    if (teacherRoomLocked) {
+      setRoom(selectedTeacher?.primaryRoom || "");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teacherId, teacherRoomLocked, open]);
+
+  const anchorForSubject = useMemo(() => {
+    if (!defaults?.classId || !subjectId) return null;
+    return anchors.find((a) => a.classId === defaults.classId && a.subjectId === subjectId) || null;
+  }, [anchors, defaults?.classId, subjectId]);
+
   const handleSave = () => {
     if (!defaults) return;
     if (!subjectId) {
@@ -119,11 +149,23 @@ export function ScheduleEditorDialog(props: {
       slot: defaults.slot,
       subjectId,
       teacherId,
-      roomId: roomId || undefined,
+      room: room.trim() || undefined,
       isGroup: isGroup || undefined,
       groupNumber: isGroup ? Number(groupNumber) : undefined,
       notes: notes.trim() ? notes.trim() : undefined,
     };
+
+    if (pinToSlot) {
+      const anchorId = anchorForSubject?.id || (crypto?.randomUUID?.() ?? String(Date.now()));
+      upsertAnchor({
+        id: anchorId,
+        classId: defaults.classId,
+        subjectId,
+        day: defaults.day,
+        slot: defaults.slot,
+      });
+    }
+
     onSave(next);
     onOpenChange(false);
     toast({
@@ -201,24 +243,48 @@ export function ScheduleEditorDialog(props: {
           </div>
 
           <div className="space-y-2">
-            <Label>Кабинет (опционально)</Label>
-            <Select value={roomId} onValueChange={setRoomId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Не указан" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="">Не указан</SelectItem>
-                {rooms
-                  .slice()
-                  .sort((a, b) => a.name.localeCompare(b.name, "ru"))
-                  .map((r) => (
-                    <SelectItem key={r.id} value={r.id}>
-                      {r.name}{r.type ? ` — ${r.type}` : ""}
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
+            <Label>Кабинет/ресурс</Label>
+            <Input
+              value={room}
+              onChange={(e) => setRoom(e.target.value)}
+              placeholder={teacherRoomLocked ? "Закреплён за учителем" : "Напр. 101 / спортзал"}
+              disabled={teacherRoomLocked}
+            />
+            {teacherRoomLocked ? (
+              <div className="text-xs text-muted-foreground">
+                Кабинет берётся из профиля учителя (не универсальный).
+              </div>
+            ) : null}
           </div>
+
+          {subjectId ? (
+            <div className="rounded-md border p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="font-medium">Закрепление предмета</div>
+                  <div className="text-sm text-muted-foreground">
+                    {anchorForSubject
+                      ? `Сейчас закреплено: ${anchorForSubject.day}, ${anchorForSubject.slot}-й`
+                      : "Не закреплён"}
+                  </div>
+                </div>
+                <Switch checked={pinToSlot} onCheckedChange={setPinToSlot} />
+              </div>
+              {anchorForSubject ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    if (!defaults) return;
+                    deleteAnchorFor(defaults.classId, subjectId);
+                    toast({ title: "Закрепление удалено" });
+                  }}
+                >
+                  Удалить закрепление
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
 
           <div className="flex items-center justify-between rounded-md border p-3">
             <div className="space-y-0.5">

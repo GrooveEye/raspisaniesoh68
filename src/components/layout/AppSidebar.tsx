@@ -40,8 +40,9 @@ const referenceItems = [
 const planningItems = [
   { title: "Учебный план", url: "/curriculum", icon: Calendar },
   { title: "Распределение", url: "/distribution", icon: BarChart3 },
-  { title: "Расписание", url: "/schedule", icon: CalendarDays },
 ];
+
+const scheduleItems = [{ title: "Расписание", url: "/schedule", icon: CalendarDays }];
 
 const toolsItems = [
   { title: "Импорт/Экспорт", url: "/import-export", icon: FileSpreadsheet },
@@ -130,6 +131,24 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {planningItems.map((item) => (
+                <SidebarMenuItem key={item.title}>
+                  <SidebarMenuButton asChild isActive={isActive(item.url)}>
+                    <NavLink to={item.url} className="flex items-center gap-2">
+                      <item.icon className="h-4 w-4" />
+                      <span>{item.title}</span>
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel>Расписание</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {scheduleItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild isActive={isActive(item.url)}>
                     <NavLink to={item.url} className="flex items-center gap-2">

@@ -1,6 +1,10 @@
-import type { ScheduleLesson, TeacherAvailability } from "@/types";
+import type { ScheduleLesson, TeacherAvailability, ScheduleAnchor } from "@/types";
 
-export type ScheduleIssueType = "teacher_conflict" | "room_conflict" | "teacher_unavailable";
+export type ScheduleIssueType =
+  | "teacher_conflict"
+  | "room_conflict"
+  | "teacher_unavailable"
+  | "anchor_mismatch";
 
 export interface ScheduleIssue {
   type: ScheduleIssueType;
@@ -11,19 +15,26 @@ export interface ScheduleIssue {
 export function getScheduleIssues(params: {
   lessons: ScheduleLesson[];
   availability: TeacherAvailability;
+  anchors?: ScheduleAnchor[];
   selectedClassId?: string;
 }) {
-  const { lessons, availability, selectedClassId } = params;
+  const { lessons, availability, anchors = [], selectedClassId } = params;
 
   const issues: ScheduleIssue[] = [];
 
-  // For fast lookups: (day|slot|teacherId) and (day|slot|roomId)
+  // For fast lookups: (day|slot|teacherId) and (day|slot|room)
   const byTeacher = new Map<string, ScheduleLesson[]>();
   const byRoom = new Map<string, ScheduleLesson[]>();
 
+  const anchorByClassSubject = new Map<string, ScheduleAnchor>();
+  for (const a of anchors) {
+    anchorByClassSubject.set(`${a.classId}__${a.subjectId}`, a);
+  }
+
   for (const l of lessons) {
     const tKey = `${l.day}__${l.slot}__${l.teacherId}`;
-    const rKey = l.roomId ? `${l.day}__${l.slot}__${l.roomId}` : null;
+    const room = (l.room || "").trim();
+    const rKey = room ? `${l.day}__${l.slot}__${room.toLowerCase()}` : null;
 
     byTeacher.set(tKey, [...(byTeacher.get(tKey) || []), l]);
     if (rKey) byRoom.set(rKey, [...(byRoom.get(rKey) || []), l]);
@@ -35,6 +46,15 @@ export function getScheduleIssues(params: {
         type: "teacher_unavailable",
         lessonId: l.id,
         message: "Учитель недоступен в этот слот",
+      });
+    }
+
+    const anchor = anchorByClassSubject.get(`${l.classId}__${l.subjectId}`);
+    if (anchor && (anchor.day !== l.day || anchor.slot !== l.slot)) {
+      issues.push({
+        type: "anchor_mismatch",
+        lessonId: l.id,
+        message: "Нарушено закрепление предмета (день/урок)",
       });
     }
   }

@@ -10,6 +10,13 @@ export interface Teacher {
   maxHours: number; // максимальная нагрузка в часах
   status: 'штатный' | 'внешний совместитель' | 'внутренний совместитель';
   /**
+   * Основной кабинет учителя (например: "101", "спортзал").
+   * Если учитель работает в разных кабинетах, можно отметить isUniversalRoom.
+   */
+  primaryRoom?: string;
+  /** Учитель работает в разных кабинетах (универсальный) */
+  isUniversalRoom?: boolean;
+  /**
    * Приоритетные параллели (номер класса 1–11), где учителю предпочтительнее вести предмет.
    * Если не указано, считается что предпочтений нет.
    */
@@ -63,16 +70,12 @@ export interface ExtracurricularAssignment {
 
 // ===== Расписание =====
 
-export interface Room {
-  id: string;
-  name: string;
-  type?: string; // например: "кабинет", "спортзал", "лаборатория"
-  capacity?: number;
-}
+export type WeekType = 5 | 6;
 
 export interface WeekGrid {
-  days: string[]; // названия дней в порядке отображения
-  slotsPerDay: number; // количество уроков/слотов в день
+  weekType: WeekType; // 5 или 6 дней
+  includeZeroLesson: boolean; // показывать 0-й урок
+  slotsPerDay: number; // количество уроков в день (без учёта 0-го)
 }
 
 // Доступность учителя по слотам недели
@@ -89,10 +92,18 @@ export interface ScheduleLesson {
   slot: number; // 1..slotsPerDay
   subjectId: string;
   teacherId: string;
-  roomId?: string;
+  room?: string; // кабинет/ресурс (строкой), если нужен
   isGroup?: boolean;
   groupNumber?: number;
   notes?: string;
+}
+
+export interface ScheduleAnchor {
+  id: string;
+  classId: string;
+  subjectId: string;
+  day: string;
+  slot: number;
 }
 
 // Учебный план: часы по предметам и классам
@@ -120,8 +131,8 @@ export interface AppState {
   extracurricularAssignments: ExtracurricularAssignment[];
   curriculumPlan: CurriculumPlan;
 
-  rooms: Room[];
   weekGrid: WeekGrid;
   teacherAvailability: TeacherAvailability;
   scheduleLessons: ScheduleLesson[];
+  scheduleAnchors: ScheduleAnchor[];
 }
