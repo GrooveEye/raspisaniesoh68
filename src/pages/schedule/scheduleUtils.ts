@@ -26,8 +26,10 @@ export function getScheduleIssues(params: {
   const byTeacher = new Map<string, ScheduleLesson[]>();
   const byRoom = new Map<string, ScheduleLesson[]>();
 
+  // В расписании сейчас проверяем только закрепления по предметам
   const anchorByClassSubject = new Map<string, ScheduleAnchor>();
   for (const a of anchors) {
+    if (!a.subjectId) continue;
     anchorByClassSubject.set(`${a.classId}__${a.subjectId}`, a);
   }
 

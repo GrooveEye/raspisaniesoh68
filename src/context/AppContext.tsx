@@ -4,6 +4,7 @@ import type {
   Teacher, 
   SchoolClass, 
   Subject, 
+  Room,
   Extracurricular, 
   LoadAssignment,
   ExtracurricularAssignment,
@@ -19,6 +20,7 @@ interface AppContextType {
   teachers: Teacher[];
   classes: SchoolClass[];
   subjects: Subject[];
+  rooms: Room[];
   extracurriculars: Extracurricular[];
   loadAssignments: LoadAssignment[];
   extracurricularAssignments: ExtracurricularAssignment[];
@@ -44,6 +46,11 @@ interface AppContextType {
   addSubject: (subject: Subject) => void;
   updateSubject: (id: string, subject: Partial<Subject>) => void;
   deleteSubject: (id: string) => void;
+
+  // Методы для кабинетов
+  addRoom: (room: Room) => void;
+  updateRoom: (id: string, room: Partial<Room>) => void;
+  deleteRoom: (id: string) => void;
   
   // Методы для внеурочной деятельности
   addExtracurricular: (extracurricular: Extracurricular) => void;
@@ -82,6 +89,7 @@ interface AppContextType {
   upsertScheduleAnchor: (anchor: ScheduleAnchor) => void;
   deleteScheduleAnchor: (id: string) => void;
   deleteScheduleAnchorFor: (classId: string, subjectId: string) => void;
+  deleteExtracurricularAnchorFor: (classId: string, extracurricularId: string) => void;
   
   // Импорт/экспорт
   importData: (data: Partial<{
@@ -100,6 +108,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [teachers, setTeachers] = useLocalStorage<Teacher[]>('school-plan-teachers', []);
   const [classes, setClasses] = useLocalStorage<SchoolClass[]>('school-plan-classes', []);
   const [subjects, setSubjects] = useLocalStorage<Subject[]>('school-plan-subjects', []);
+  const [rooms, setRooms] = useLocalStorage<Room[]>('school-plan-rooms', []);
   const [extracurriculars, setExtracurriculars] = useLocalStorage<Extracurricular[]>('school-plan-extracurriculars', []);
   const [loadAssignments, setLoadAssignments] = useLocalStorage<LoadAssignment[]>('school-plan-load-assignments', []);
   const [extracurricularAssignments, setExtracurricularAssignments] = useLocalStorage<ExtracurricularAssignment[]>('school-plan-extracurricular-assignments', []);
@@ -166,6 +175,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const deleteSubject = (id: string) => {
     setSubjects(prev => prev.filter(s => s.id !== id));
     setLoadAssignments(prev => prev.filter(a => a.subjectId !== id));
+    // Удаляем закрепления по предмету
+    setScheduleAnchors(prev => prev.filter(a => a.subjectId !== id));
+  };
+
+  // Кабинеты
+  const addRoom = (room: Room) => {
+    setRooms((prev) => [...prev, room]);
+  };
+
+  const updateRoom = (id: string, updates: Partial<Room>) => {
+    setRooms((prev) => prev.map((r) => (r.id === id ? { ...r, ...updates } : r)));
+  };
+
+  const deleteRoom = (id: string) => {
+    // Если кабинет был назначен как основной — очищаем у учителей
+    const room = rooms.find((r) => r.id === id);
+    if (room) {
+      setTeachers((prev) =>
+        prev.map((t) => (t.primaryRoom === room.name ? { ...t, primaryRoom: "" } : t))
+      );
+    }
+    setRooms((prev) => prev.filter((r) => r.id !== id));
   };
 
   // Внеурочная деятельность
@@ -180,6 +211,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const deleteExtracurricular = (id: string) => {
     setExtracurriculars(prev => prev.filter(e => e.id !== id));
     setExtracurricularAssignments(prev => prev.filter(a => a.extracurricularId !== id));
+    // Удаляем закрепления по внеурочке
+    setScheduleAnchors(prev => prev.filter(a => a.extracurricularId !== id));
   };
 
   // Распределение нагрузки
@@ -290,6 +323,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setScheduleAnchors(prev => prev.filter(a => !(a.classId === classId && a.subjectId === subjectId)));
   };
 
+  const deleteExtracurricularAnchorFor = (classId: string, extracurricularId: string) => {
+    setScheduleAnchors((prev) => prev.filter((a) => !(a.classId === classId && a.extracurricularId === extracurricularId)));
+  };
+
   // Импорт данных
   const importData = (data: Partial<{
     teachers: Teacher[];
@@ -310,6 +347,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setTeachers([]);
     setClasses([]);
     setSubjects([]);
+    setRooms([]);
     setExtracurriculars([]);
     setLoadAssignments([]);
     setExtracurricularAssignments([]);
@@ -329,6 +367,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     teachers,
     classes,
     subjects,
+    rooms,
     extracurriculars,
     loadAssignments,
     extracurricularAssignments,
@@ -345,6 +384,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     addSubject,
     updateSubject,
     deleteSubject,
+    addRoom,
+    updateRoom,
+    deleteRoom,
     addExtracurricular,
     updateExtracurricular,
     deleteExtracurricular,
@@ -368,6 +410,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     upsertScheduleAnchor,
     deleteScheduleAnchor,
     deleteScheduleAnchorFor,
+    deleteExtracurricularAnchorFor,
     importData,
     clearAllData,
   };

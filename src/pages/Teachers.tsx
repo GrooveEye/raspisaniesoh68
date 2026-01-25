@@ -54,7 +54,7 @@ const emptyTeacher: Omit<Teacher, "id"> = {
 };
 
 export default function Teachers() {
-  const { teachers, subjects, addTeacher, updateTeacher, deleteTeacher } = useApp();
+  const { teachers, subjects, rooms, addTeacher, updateTeacher, deleteTeacher } = useApp();
   const [searchQuery, setSearchQuery] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingTeacher, setEditingTeacher] = useState<Teacher | null>(null);
@@ -267,12 +267,33 @@ export default function Teachers() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="primaryRoom">Основной кабинет</Label>
-                  <Input
-                    id="primaryRoom"
-                    value={formData.primaryRoom ?? ""}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, primaryRoom: e.target.value }))}
-                    placeholder="101 / спортзал"
-                  />
+                  {rooms.length > 0 ? (
+                    <Select
+                      value={formData.primaryRoom ?? ""}
+                      onValueChange={(v) => setFormData((prev) => ({ ...prev, primaryRoom: v }))}
+                    >
+                      <SelectTrigger id="primaryRoom">
+                        <SelectValue placeholder="Выберите кабинет" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {rooms
+                          .slice()
+                          .sort((a, b) => a.name.localeCompare(b.name, "ru"))
+                          .map((r) => (
+                            <SelectItem key={r.id} value={r.name}>
+                              {r.name}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Input
+                      id="primaryRoom"
+                      value={formData.primaryRoom ?? ""}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, primaryRoom: e.target.value }))}
+                      placeholder="101 / спортзал"
+                    />
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label>Универсальный кабинет</Label>
@@ -461,7 +482,7 @@ export default function Teachers() {
           <DropdownMenuTrigger asChild>
             <Button type="button" variant="outline" className="gap-2">
               <SlidersHorizontal className="h-4 w-4" />
-              Колонки
+              Фильтр
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">

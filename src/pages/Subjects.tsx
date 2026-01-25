@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Pencil, Trash2, Search, Users } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, Users, Anchor } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -29,6 +29,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { useApp } from "@/context/AppContext";
 import type { Subject } from "@/types";
+import { AnchorsManagerDialog } from "@/components/schedule/AnchorsManagerDialog";
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -56,6 +57,9 @@ export default function Subjects() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
   const [formData, setFormData] = useState<Omit<Subject, 'id'>>(emptySubject);
+
+  const [anchorsOpen, setAnchorsOpen] = useState(false);
+  const [anchorsSubject, setAnchorsSubject] = useState<Subject | null>(null);
 
   const filteredSubjects = subjects
     .filter(
@@ -270,6 +274,17 @@ export default function Subjects() {
                       <Button
                         variant="ghost"
                         size="icon"
+                        onClick={() => {
+                          setAnchorsSubject(subject);
+                          setAnchorsOpen(true);
+                        }}
+                        title="Закрепления"
+                      >
+                        <Anchor className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
                         onClick={() => handleOpenDialog(subject)}
                       >
                         <Pencil className="h-4 w-4" />
@@ -289,6 +304,19 @@ export default function Subjects() {
           </TableBody>
         </Table>
       </div>
+
+      {anchorsSubject && (
+        <AnchorsManagerDialog
+          open={anchorsOpen}
+          onOpenChange={(o) => {
+            setAnchorsOpen(o);
+            if (!o) setAnchorsSubject(null);
+          }}
+          targetType="subject"
+          targetId={anchorsSubject.id}
+          targetName={anchorsSubject.name}
+        />
+      )}
     </div>
   );
 }

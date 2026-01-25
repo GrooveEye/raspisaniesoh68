@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { Plus, Pencil, Trash2, Search, UserCheck, Users } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, UserCheck, Users, Anchor } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -35,6 +35,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useApp } from "@/context/AppContext";
 import { toast } from "sonner";
 import type { Extracurricular, ExtracurricularAssignment } from "@/types";
+import { AnchorsManagerDialog } from "@/components/schedule/AnchorsManagerDialog";
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -74,6 +75,9 @@ export default function ExtracurricularPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Extracurricular | null>(null);
   const [formData, setFormData] = useState<Omit<Extracurricular, 'id'>>(emptyExtracurricular);
+
+  const [anchorsOpen, setAnchorsOpen] = useState(false);
+  const [anchorsItem, setAnchorsItem] = useState<Extracurricular | null>(null);
 
   // Диалог назначения учителя
   const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false);
@@ -275,14 +279,14 @@ export default function ExtracurricularPage() {
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Назначить учителя на внеурочку</DialogTitle>
+                <DialogTitle>Назначить учителя на внеурочную деятельность</DialogTitle>
                 <DialogDescription>
                   Выберите курс и учителя. Можно указать конкретные параллели.
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
-                  <Label>Курс внеурочки</Label>
+                  <Label>Курс внеурочной деятельности</Label>
                   <Select value={selectedExtracurricular} onValueChange={(v) => {
                     setSelectedExtracurricular(v);
                     const ext = extracurriculars.find(e => e.id === v);
@@ -539,7 +543,7 @@ export default function ExtracurricularPage() {
 
       <Tabs defaultValue="courses" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="courses">Курсы внеурочки</TabsTrigger>
+          <TabsTrigger value="courses">Курсы внеурочной деятельности</TabsTrigger>
           <TabsTrigger value="assignments">Назначения учителей</TabsTrigger>
           <TabsTrigger value="classTeacher">Курсы классного руководителя</TabsTrigger>
         </TabsList>
@@ -593,6 +597,17 @@ export default function ExtracurricularPage() {
                           <Button
                             variant="ghost"
                             size="icon"
+                            onClick={() => {
+                              setAnchorsItem(item);
+                              setAnchorsOpen(true);
+                            }}
+                            title="Закрепления"
+                          >
+                            <Anchor className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             onClick={() => handleOpenDialog(item)}
                           >
                             <Pencil className="h-4 w-4" />
@@ -617,9 +632,9 @@ export default function ExtracurricularPage() {
         <TabsContent value="assignments">
           <Card>
             <CardHeader>
-              <CardTitle>Назначения учителей на внеурочку</CardTitle>
+              <CardTitle>Назначения учителей на внеурочную деятельность</CardTitle>
               <CardDescription>
-                Здесь отображаются назначения учителей на обычные курсы внеурочки (не классного руководителя)
+                Здесь отображаются назначения учителей на обычные курсы внеурочной деятельности (не классного руководителя)
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -728,6 +743,19 @@ export default function ExtracurricularPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {anchorsItem && (
+        <AnchorsManagerDialog
+          open={anchorsOpen}
+          onOpenChange={(o) => {
+            setAnchorsOpen(o);
+            if (!o) setAnchorsItem(null);
+          }}
+          targetType="extracurricular"
+          targetId={anchorsItem.id}
+          targetName={anchorsItem.name}
+        />
+      )}
 
       {/* Сводка по направлениям */}
       {itemsByDirection.length > 0 && (

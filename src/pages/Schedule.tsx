@@ -28,6 +28,7 @@ export default function Schedule() {
     classes,
     subjects,
     teachers,
+    extracurriculars,
     loadAssignments,
     weekGrid,
     teacherAvailability,
@@ -117,13 +118,19 @@ export default function Schedule() {
         const cla = ca ? `${ca.grade}${ca.letter}` : "";
         const clb = cb ? `${cb.grade}${cb.letter}` : "";
         if (cla !== clb) return cla.localeCompare(clb, "ru");
-        const sa = subjects.find((s) => s.id === a.subjectId)?.name || "";
-        const sb = subjects.find((s) => s.id === b.subjectId)?.name || "";
-        if (sa !== sb) return sa.localeCompare(sb, "ru");
+
+        const ta = a.subjectId
+          ? `Предмет: ${subjects.find((s) => s.id === a.subjectId)?.name || "?"}`
+          : `Внеурочная деятельность: ${extracurriculars.find((e) => e.id === a.extracurricularId)?.name || "?"}`;
+        const tb = b.subjectId
+          ? `Предмет: ${subjects.find((s) => s.id === b.subjectId)?.name || "?"}`
+          : `Внеурочная деятельность: ${extracurriculars.find((e) => e.id === b.extracurricularId)?.name || "?"}`;
+        if (ta !== tb) return ta.localeCompare(tb, "ru");
+
         if (a.day !== b.day) return a.day.localeCompare(b.day, "ru");
         return a.slot - b.slot;
       });
-  }, [scheduleAnchors, classes, subjects]);
+  }, [scheduleAnchors, classes, subjects, extracurriculars]);
 
   return (
     <div className="space-y-6">
@@ -325,19 +332,21 @@ export default function Schedule() {
         <TabsContent value="anchors" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Закрепления (класс + предмет → день/урок)</CardTitle>
+              <CardTitle>Закрепления (класс + предмет/внеурочка → день/урок)</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               {sortedAnchors.length === 0 ? (
                 <div className="text-sm text-muted-foreground">
-                  Пока нет закреплений. Их можно добавить из редактора урока (включите переключатель «Закрепление предмета»).
+                  Пока нет закреплений. Их можно добавить из редактора урока или из справочников «Предметы» / «Внеурочная деятельность».
                 </div>
               ) : (
                 <div className="space-y-2">
                   {sortedAnchors.map((a) => {
                     const c = classes.find((x) => x.id === a.classId);
-                    const s = subjects.find((x) => x.id === a.subjectId);
-                    const label = `${c ? `${c.grade}${c.letter}` : "?"} — ${s?.name || "?"}`;
+                    const subj = a.subjectId ? subjects.find((x) => x.id === a.subjectId) : null;
+                    const ext = a.extracurricularId ? extracurriculars.find((x) => x.id === a.extracurricularId) : null;
+                    const kind = subj ? `Предмет: ${subj.name}` : ext ? `Внеурочная деятельность: ${ext.name}` : "?";
+                    const label = `${c ? `${c.grade}${c.letter}` : "?"} — ${kind}`;
                     return (
                       <div key={a.id} className="flex items-center justify-between rounded-md border p-3">
                         <div className="min-w-0">
