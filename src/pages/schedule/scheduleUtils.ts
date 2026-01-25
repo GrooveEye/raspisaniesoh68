@@ -70,6 +70,9 @@ export function getScheduleIssues(params: {
 
   for (const [, list] of byTeacher) {
     if (list.length <= 1) continue;
+    // Если это одно и то же «общее занятие» (например, внеурочка на параллель), конфликт не считаем
+    const sharedId = list[0]?.sharedGroupId;
+    if (sharedId && list.every((l) => l.sharedGroupId === sharedId)) continue;
     for (const l of list) {
       issues.push({
         type: "teacher_conflict",
@@ -81,6 +84,8 @@ export function getScheduleIssues(params: {
 
   for (const [, list] of byRoom) {
     if (list.length <= 1) continue;
+    const sharedId = list[0]?.sharedGroupId;
+    if (sharedId && list.every((l) => l.sharedGroupId === sharedId)) continue;
     for (const l of list) {
       issues.push({
         type: "room_conflict",

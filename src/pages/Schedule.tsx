@@ -181,6 +181,14 @@ import {
     // Ручное распределение часов внеурочки по классам (перед запуском автораспределения)
     const [extracurricularHours, setExtracurricularHours] = useState<ExtracurricularHoursByAssignment>({});
 
+    // Режим внеурочки:
+    // - split: часы распределяются по классам (сумма = hoursPerWeek)
+    // - parallel: одно занятие идёт одновременно на несколько классов (hoursPerWeek = часов у учителя)
+    const [extracurricularMode, setExtracurricularMode] = useState<Record<string, "split" | "parallel">>({});
+    const [extracurricularParallelClasses, setExtracurricularParallelClasses] = useState<
+      Record<string, Record<string, boolean>>
+    >({});
+
     useEffect(() => {
       if (!autoDistributeOpen) return;
       // Инициализируем структуру, чтобы inputs были контролируемыми
@@ -195,6 +203,26 @@ import {
         }
         return next;
       });
+
+      setExtracurricularMode((prev) => {
+        const next = { ...prev };
+        for (const a of extracurricularAssignments) {
+          if (!next[a.id]) next[a.id] = "split";
+        }
+        return next;
+      });
+
+      setExtracurricularParallelClasses((prev) => {
+        const next = { ...prev };
+        for (const a of extracurricularAssignments) {
+          const targetClasses = sortedClasses.filter((c) => a.targetGrades.includes(c.grade));
+          if (!next[a.id]) next[a.id] = {};
+          for (const c of targetClasses) {
+            if (next[a.id][c.id] === undefined) next[a.id][c.id] = true;
+          }
+        }
+        return next;
+      });
     }, [autoDistributeOpen, extracurricularAssignments, sortedClasses]);
 
     const extracurricularValidation = useMemo(() => {
@@ -205,6 +233,8 @@ import {
           sum: number;
           ok: boolean;
           targetClassIds: string[];
+          mode: "split" | "parallel";
+          parallelSelectedCount: number;
         }
       >();
 
@@ -212,29 +242,62 @@ import {
         const targetClassIds = sortedClasses
           .filter((c) => a.targetGrades.includes(c.grade))
           .map((c) => c.id);
-        const sum = targetClassIds.reduce((acc, classId) => {
-          const v = extracurricularHours[a.id]?.[classId] ?? 0;
-          return acc + (Number(v) || 0);
-        }, 0);
+        const mode = extracurricularMode[a.id] || "split";
+        const sum =
+          mode === "split"
+            ? targetClassIds.reduce((acc, classId) => {
+                const v = extracurricularHours[a.id]?.[classId] ?? 0;
+                return acc + (Number(v) || 0);
+              }, 0)
+            : 0;
+
+        const parallelSelectedCount =
+          mode === "parallel"
+            ? targetClassIds.filter((classId) => extracurricularParallelClasses[a.id]?.[classId]).length
+            : 0;
         const total = a.hoursPerWeek;
         byId.set(a.id, {
           total,
           sum,
-          ok: total === sum,
+          ok: mode === "split" ? total === sum : parallelSelectedCount > 0,
           targetClassIds,
+          mode,
+          parallelSelectedCount,
         });
       }
 
       const allOk = Array.from(byId.values()).every((x) => x.ok);
       return { byId, allOk };
-    }, [extracurricularAssignments, extracurricularHours, sortedClasses]);
+    }, [extracurricularAssignments, extracurricularHours, extracurricularMode, extracurricularParallelClasses, sortedClasses]);
  
      const handleAutoDistribute = () => {
-       const extracurricularLoad = buildExtracurricularLoadAssignments({
-         extracurricularAssignments,
-         classes,
-         hoursByAssignment: extracurricularHours,
-       });
+        const splitAssignments = extracurricularAssignments.filter(
+          (a) => (extracurricularMode[a.id] || "split") === "split"
+        );
+
+        const extracurricularLoad = buildExtracurricularLoadAssignments({
+          extracurricularAssignments: splitAssignments,
+          classes,
+          hoursByAssignment: extracurricularHours,
+        });
+
+        const sharedGroups = extracurricularAssignments
+          .filter((a) => (extracurricularMode[a.id] || "split") === "parallel")
+          .map((a) => {
+            const targetClassIds = sortedClasses
+              .filter((c) => a.targetGrades.includes(c.grade))
+              .map((c) => c.id)
+              .filter((classId) => Boolean(extracurricularParallelClasses[a.id]?.[classId]));
+
+            return {
+              id: `extr_parallel__${a.id}`,
+              teacherId: a.teacherId,
+              subjectId: `${EXTRACURRICULAR_SUBJECT_PREFIX}${a.extracurricularId}`,
+              classIds: targetClassIds,
+              hoursPerWeek: a.hoursPerWeek,
+            };
+          })
+          .filter((g) => g.classIds.length > 0);
 
        const mergedAssignments = [...loadAssignments, ...extracurricularLoad];
 
@@ -261,6 +324,7 @@ import {
          weekGrid,
          teacherAvailability,
          existingLessons: [],
+          sharedGroups,
        });
 
        setScheduleLessons(result.lessons);
@@ -633,9 +697,31 @@ import {
                           </div>
                           <div className="text-xs text-muted-foreground">
                             Целевые параллели: {a.targetGrades.join(", ")}; всего часов: {a.hoursPerWeek};
-                            сумма по классам: {v?.sum ?? 0}{" "}
-                            {v?.ok ? "(OK)" : "(не совпадает)"}
+                            {v?.mode === "split" ? (
+                              <>
+                                сумма по классам: {v?.sum ?? 0} {v?.ok ? "(OK)" : "(не совпадает)"}
+                              </>
+                            ) : (
+                              <>
+                                одновременно на классы: {v?.parallelSelectedCount ?? 0} {v?.ok ? "(OK)" : "(не выбрано)"}
+                              </>
+                            )}
                           </div>
+                        </div>
+
+                        <div className="flex items-center justify-between rounded-md border p-3">
+                          <div className="space-y-0.5">
+                            <div className="font-medium">Общее занятие на параллель</div>
+                            <div className="text-sm text-muted-foreground">
+                              Если включено — этот кружок идёт одновременно на выбранные классы (без конфликта учителя)
+                            </div>
+                          </div>
+                          <Switch
+                            checked={(extracurricularMode[a.id] || "split") === "parallel"}
+                            onCheckedChange={(on) =>
+                              setExtracurricularMode((prev) => ({ ...prev, [a.id]: on ? "parallel" : "split" }))
+                            }
+                          />
                         </div>
 
                         {targetClasses.length === 0 ? (
@@ -643,32 +729,53 @@ import {
                             Нет классов подходящих параллелей.
                           </div>
                         ) : (
-                          <div
-                            className="grid gap-2"
-                            style={{
-                              gridTemplateColumns: `repeat(${Math.min(targetClasses.length, 4)}, minmax(140px, 1fr))`,
-                            }}
-                          >
-                            {targetClasses.map((c) => (
-                              <div key={c.id} className="space-y-1">
-                                <div className="text-xs text-muted-foreground">{classLabel(c.grade, c.letter)}</div>
-                                <Input
-                                  type="number"
-                                  min={0}
-                                  step={1}
-                                  value={extracurricularHours[a.id]?.[c.id] ?? 0}
-                                  onChange={(e) => {
-                                    const raw = e.target.value;
-                                    const nextVal = raw === "" ? 0 : Math.max(0, Math.floor(Number(raw) || 0));
-                                    setExtracurricularHours((prev) => ({
-                                      ...prev,
-                                      [a.id]: { ...(prev[a.id] || {}), [c.id]: nextVal },
-                                    }));
-                                  }}
-                                />
-                              </div>
-                            ))}
-                          </div>
+                          (extracurricularMode[a.id] || "split") === "split" ? (
+                            <div
+                              className="grid gap-2"
+                              style={{
+                                gridTemplateColumns: `repeat(${Math.min(targetClasses.length, 4)}, minmax(140px, 1fr))`,
+                              }}
+                            >
+                              {targetClasses.map((c) => (
+                                <div key={c.id} className="space-y-1">
+                                  <div className="text-xs text-muted-foreground">{classLabel(c.grade, c.letter)}</div>
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    step={1}
+                                    value={extracurricularHours[a.id]?.[c.id] ?? 0}
+                                    onChange={(e) => {
+                                      const raw = e.target.value;
+                                      const nextVal = raw === "" ? 0 : Math.max(0, Math.floor(Number(raw) || 0));
+                                      setExtracurricularHours((prev) => ({
+                                        ...prev,
+                                        [a.id]: { ...(prev[a.id] || {}), [c.id]: nextVal },
+                                      }));
+                                    }}
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(2, minmax(220px, 1fr))" }}>
+                              {targetClasses.map((c) => (
+                                <label key={c.id} className="flex items-center gap-2 rounded-md border p-2">
+                                  <input
+                                    type="checkbox"
+                                    checked={Boolean(extracurricularParallelClasses[a.id]?.[c.id])}
+                                    onChange={(e) => {
+                                      const checked = e.target.checked;
+                                      setExtracurricularParallelClasses((prev) => ({
+                                        ...prev,
+                                        [a.id]: { ...(prev[a.id] || {}), [c.id]: checked },
+                                      }));
+                                    }}
+                                  />
+                                  <span className="text-sm">{classLabel(c.grade, c.letter)}</span>
+                                </label>
+                              ))}
+                            </div>
+                          )
                         )}
                       </div>
                     );
