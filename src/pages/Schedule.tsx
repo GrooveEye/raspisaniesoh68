@@ -587,7 +587,7 @@ import {
          <TabsContent value="anchors" className="space-y-4">
            <Card>
              <CardHeader>
-               <CardTitle>Закрепления (класс + предмет/внеурочка → день/урок)</CardTitle>
+                <CardTitle>Закрепления (класс + предмет/внеурочная деятельность → день/урок)</CardTitle>
              </CardHeader>
              <CardContent className="space-y-3">
                {sortedAnchors.length === 0 ? (
@@ -678,8 +678,8 @@ import {
             {extracurricularAssignments.length ? (
               <div className="mt-4 space-y-4">
                 <div className="text-sm text-muted-foreground">
-                  Внеурочка распределяется как «обычные предметы», но часы нужно разложить по классам вручную
-                  (сумма по классам должна совпадать с общим количеством часов по назначению).
+                    Внеурочная деятельность распределяется как «обычные предметы», но часы нужно разложить по классам вручную
+                    (сумма по классам должна совпадать с общим количеством часов по назначению).
                 </div>
 
                 <div className="space-y-4 max-h-[40vh] overflow-auto rounded-md border p-3">
@@ -693,7 +693,7 @@ import {
                       <div key={a.id} className="space-y-2">
                         <div className="flex flex-col gap-1">
                           <div className="font-medium">
-                            {ext?.name || "Внеурочка"} — {teacher?.fullName || "Учитель"}
+                            {ext?.name || "Внеурочная деятельность"} — {teacher?.fullName || "Учитель"}
                           </div>
                           <div className="text-xs text-muted-foreground">
                             Целевые параллели: {a.targetGrades.join(", ")}; всего часов: {a.hoursPerWeek};
@@ -791,7 +791,7 @@ import {
                 disabled={extracurricularAssignments.length > 0 && !extracurricularValidation.allOk}
                 title={
                   extracurricularAssignments.length > 0 && !extracurricularValidation.allOk
-                    ? "Суммы часов внеурочки по классам должны совпадать с общим количеством часов"
+                    ? "Суммы часов внеурочной деятельности по классам должны совпадать с общим количеством часов"
                     : undefined
                 }
               >
