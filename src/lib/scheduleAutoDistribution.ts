@@ -43,7 +43,7 @@
      existingLessons = [],
    } = params;
  
-   const lessons: ScheduleLesson[] = [];
+   const lessons: ScheduleLesson[] = [...existingLessons];
    const conflicts: string[] = [];
  
    // Дни недели
@@ -74,9 +74,8 @@
    // Индекс занятости кабинетов: день__слот -> Set<room>
    const roomOccupied = new Map<string, Set<string>>();
  
-   // Сохраняем существующие уроки (для сохранения ручных правок)
-   for (const l of existingLessons) {
-     lessons.push(l);
+   // Индексируем существующие уроки
+   for (const l of lessons) {
      const key = `${l.day}__${l.slot}`;
      teacherOccupied.set(key, (teacherOccupied.get(key) || new Set()).add(l.teacherId));
      if (l.room) {
