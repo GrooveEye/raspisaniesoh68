@@ -61,6 +61,40 @@ export interface ExtracurricularAssignment {
   hoursPerWeek: number;
 }
 
+// ===== Расписание =====
+
+export interface Room {
+  id: string;
+  name: string;
+  type?: string; // например: "кабинет", "спортзал", "лаборатория"
+  capacity?: number;
+}
+
+export interface WeekGrid {
+  days: string[]; // названия дней в порядке отображения
+  slotsPerDay: number; // количество уроков/слотов в день
+}
+
+// Доступность учителя по слотам недели
+// true = доступен, false = недоступен
+export type TeacherAvailability = Record<
+  string,
+  Record<string, Record<number, boolean>>
+>;
+
+export interface ScheduleLesson {
+  id: string;
+  classId: string;
+  day: string;
+  slot: number; // 1..slotsPerDay
+  subjectId: string;
+  teacherId: string;
+  roomId?: string;
+  isGroup?: boolean;
+  groupNumber?: number;
+  notes?: string;
+}
+
 // Учебный план: часы по предметам и классам
 // Ключ: `${subjectId}_${classId}`, значение: часы в неделю
 export type CurriculumPlan = Record<string, number>;
@@ -85,4 +119,9 @@ export interface AppState {
   loadAssignments: LoadAssignment[];
   extracurricularAssignments: ExtracurricularAssignment[];
   curriculumPlan: CurriculumPlan;
+
+  rooms: Room[];
+  weekGrid: WeekGrid;
+  teacherAvailability: TeacherAvailability;
+  scheduleLessons: ScheduleLesson[];
 }

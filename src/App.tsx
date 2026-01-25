@@ -12,6 +12,7 @@ import Subjects from "./pages/Subjects";
 import Extracurricular from "./pages/Extracurricular";
 import Curriculum from "./pages/Curriculum";
 import Distribution from "./pages/Distribution";
+import Schedule from "./pages/Schedule";
 import ImportExport from "./pages/ImportExport";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
@@ -40,6 +41,7 @@ const App = () => {
                 <Route path="/extracurricular" element={<Extracurricular />} />
                 <Route path="/curriculum" element={<Curriculum />} />
                 <Route path="/distribution" element={<Distribution />} />
+                <Route path="/schedule" element={<Schedule />} />
                 <Route path="/import-export" element={<ImportExport />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="*" element={<NotFound />} />

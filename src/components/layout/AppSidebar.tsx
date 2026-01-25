@@ -4,6 +4,7 @@ import {
   BookOpen,
   Palette,
   Calendar,
+  CalendarDays,
   BarChart3,
   FileSpreadsheet,
   Settings,
@@ -39,6 +40,7 @@ const referenceItems = [
 const planningItems = [
   { title: "Учебный план", url: "/curriculum", icon: Calendar },
   { title: "Распределение", url: "/distribution", icon: BarChart3 },
+  { title: "Расписание", url: "/schedule", icon: CalendarDays },
 ];
 
 const toolsItems = [

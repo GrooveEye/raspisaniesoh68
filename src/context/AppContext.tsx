@@ -7,7 +7,11 @@ import type {
   Extracurricular, 
   LoadAssignment,
   ExtracurricularAssignment,
-  CurriculumPlan 
+  CurriculumPlan,
+  Room,
+  WeekGrid,
+  TeacherAvailability,
+  ScheduleLesson,
 } from '@/types';
 
 interface AppContextType {
@@ -19,6 +23,12 @@ interface AppContextType {
   loadAssignments: LoadAssignment[];
   extracurricularAssignments: ExtracurricularAssignment[];
   curriculumPlan: CurriculumPlan;
+
+  // Расписание
+  rooms: Room[];
+  weekGrid: WeekGrid;
+  teacherAvailability: TeacherAvailability;
+  scheduleLessons: ScheduleLesson[];
   
   // Методы для учителей
   addTeacher: (teacher: Teacher) => void;
@@ -56,6 +66,22 @@ interface AppContextType {
   setCurriculumHours: (subjectId: string, classId: string, hours: number) => void;
   getCurriculumHours: (subjectId: string, classId: string) => number;
   clearCurriculumPlan: () => void;
+
+  // Кабинеты
+  addRoom: (room: Room) => void;
+  updateRoom: (id: string, room: Partial<Room>) => void;
+  deleteRoom: (id: string) => void;
+
+  // Сетка недели
+  setWeekGrid: (grid: WeekGrid) => void;
+
+  // Доступность учителей
+  setTeacherAvailability: (availability: TeacherAvailability) => void;
+  setTeacherAvailabilityCell: (teacherId: string, day: string, slot: number, available: boolean) => void;
+
+  // Уроки
+  upsertScheduleLesson: (lesson: ScheduleLesson) => void;
+  deleteScheduleLesson: (id: string) => void;
   
   // Импорт/экспорт
   importData: (data: Partial<{
@@ -78,6 +104,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [loadAssignments, setLoadAssignments] = useLocalStorage<LoadAssignment[]>('school-plan-load-assignments', []);
   const [extracurricularAssignments, setExtracurricularAssignments] = useLocalStorage<ExtracurricularAssignment[]>('school-plan-extracurricular-assignments', []);
   const [curriculumPlan, setCurriculumPlan] = useLocalStorage<CurriculumPlan>('school-plan-curriculum', {});
+
+  // Расписание
+  const [rooms, setRooms] = useLocalStorage<Room[]>('school-plan-rooms', []);
+  const [weekGrid, setWeekGrid] = useLocalStorage<WeekGrid>('school-plan-week-grid', {
+    days: ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница'],
+    slotsPerDay: 7,
+  });
+  const [teacherAvailability, setTeacherAvailability] = useLocalStorage<TeacherAvailability>(
+    'school-plan-teacher-availability',
+    {}
+  );
+  const [scheduleLessons, setScheduleLessons] = useLocalStorage<ScheduleLesson[]>(
+    'school-plan-schedule-lessons',
+    []
+  );
 
   // Учителя
   const addTeacher = (teacher: Teacher) => {
@@ -188,6 +229,52 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setCurriculumPlan({});
   };
 
+  // Кабинеты
+  const addRoom = (room: Room) => setRooms(prev => [...prev, room]);
+  const updateRoom = (id: string, updates: Partial<Room>) => {
+    setRooms(prev => prev.map(r => (r.id === id ? { ...r, ...updates } : r)));
+  };
+  const deleteRoom = (id: string) => {
+    setRooms(prev => prev.filter(r => r.id !== id));
+    setScheduleLessons(prev => prev.map(l => (l.roomId === id ? { ...l, roomId: undefined } : l)));
+  };
+
+  // Доступность учителей
+  const setTeacherAvailabilityCell = (
+    teacherId: string,
+    day: string,
+    slot: number,
+    available: boolean
+  ) => {
+    setTeacherAvailability(prev => {
+      const teacher = prev[teacherId] || {};
+      const dayMap = teacher[day] || {};
+      return {
+        ...prev,
+        [teacherId]: {
+          ...teacher,
+          [day]: { ...dayMap, [slot]: available },
+        },
+      };
+    });
+  };
+
+  // Уроки
+  const upsertScheduleLesson = (lesson: ScheduleLesson) => {
+    setScheduleLessons(prev => {
+      const idx = prev.findIndex(l => l.id === lesson.id);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = lesson;
+        return next;
+      }
+      return [...prev, lesson];
+    });
+  };
+  const deleteScheduleLesson = (id: string) => {
+    setScheduleLessons(prev => prev.filter(l => l.id !== id));
+  };
+
   // Импорт данных
   const importData = (data: Partial<{
     teachers: Teacher[];
@@ -212,6 +299,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setLoadAssignments([]);
     setExtracurricularAssignments([]);
     setCurriculumPlan({});
+
+    setRooms([]);
+    setTeacherAvailability({});
+    setScheduleLessons([]);
+    setWeekGrid({
+      days: ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница'],
+      slotsPerDay: 7,
+    });
   };
 
   const value: AppContextType = {
@@ -221,6 +316,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     extracurriculars,
     loadAssignments,
     extracurricularAssignments,
+    rooms,
+    weekGrid,
+    teacherAvailability,
+    scheduleLessons,
     addTeacher,
     updateTeacher,
     deleteTeacher,
@@ -245,6 +344,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setCurriculumHours,
     getCurriculumHours,
     clearCurriculumPlan,
+    addRoom,
+    updateRoom,
+    deleteRoom,
+    setWeekGrid,
+    setTeacherAvailability,
+    setTeacherAvailabilityCell,
+    upsertScheduleLesson,
+    deleteScheduleLesson,
     importData,
     clearAllData,
   };
