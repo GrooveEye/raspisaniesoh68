@@ -28,7 +28,7 @@ export function getScheduleIssues(params: {
   const byTeacher = new Map<string, ScheduleLesson[]>();
   const byRoom = new Map<string, ScheduleLesson[]>();
 
-  // В расписании проверяем закрепления по предметам и по внеурочке (как псевдо‑предметы)
+  // В расписании проверяем закрепления по предметам и по внеурочной деятельности (как псевдо‑предметы)
   const anchorByClassSubject = new Map<string, ScheduleAnchor>();
   for (const a of anchors) {
     if (a.subjectId) {
@@ -70,7 +70,7 @@ export function getScheduleIssues(params: {
 
   for (const [, list] of byTeacher) {
     if (list.length <= 1) continue;
-    // Если это одно и то же «общее занятие» (например, внеурочка на параллель), конфликт не считаем
+    // Если это одно и то же «общее занятие» (например, внеурочная деятельность на параллель), конфликт не считаем
     const sharedId = list[0]?.sharedGroupId;
     if (sharedId && list.every((l) => l.sharedGroupId === sharedId)) continue;
     for (const l of list) {

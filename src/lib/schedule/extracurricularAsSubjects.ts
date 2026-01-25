@@ -5,7 +5,7 @@ export const EXTRACURRICULAR_SUBJECT_PREFIX = "extr_";
 export function extracurricularToSubject(ex: Extracurricular): Subject {
   return {
     id: `${EXTRACURRICULAR_SUBJECT_PREFIX}${ex.id}`,
-    name: `Внеурочка: ${ex.name}`,
+    name: `Внеурочная деятельность: ${ex.name}`,
     area: "Внеурочная деятельность",
     requiresGroupSplit: false,
   };

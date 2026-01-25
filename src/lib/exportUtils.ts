@@ -136,7 +136,7 @@ export function exportExtracurricularsToExcel(extracurriculars: Extracurricular[
   
   const ws = XLSX.utils.json_to_sheet(data);
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Внеурочка');
+  XLSX.utils.book_append_sheet(wb, ws, 'Внеурочная деятельность');
   
   ws['!cols'] = [
     { wch: 40 }, { wch: 20 }, { wch: 15 }, { wch: 20 }, { wch: 15 }, { wch: 20 }
@@ -150,7 +150,7 @@ export function exportExtracurricularsToExcel(extracurriculars: Extracurricular[
 type DistributionMode = "teacher" | "class" | "subject";
 
 type FlatDistributionRow = {
-  type: "Урок" | "Внеурочка";
+  type: "Урок" | "Внеурочная деятельность";
   teacher: string;
   className: string;
   subjectOrActivity: string;
@@ -219,13 +219,13 @@ function buildFlatRows(
     });
   }
 
-  // Внеурочка (обычные назначения)
+  // Внеурочная деятельность (обычные назначения)
   for (const a of extracurricularAssignments) {
     const t = teacherById.get(a.teacherId);
     const ext = extById.get(a.extracurricularId);
     if (!t || !ext) continue;
     rows.push({
-      type: "Внеурочка",
+      type: "Внеурочная деятельность",
       teacher: t.fullName,
       className: "",
       subjectOrActivity: ext.name,
@@ -242,7 +242,7 @@ function buildFlatRows(
         for (const ext of classTeacherCourses) {
           if (!ext.targetGrades.includes(cls.grade)) continue;
           rows.push({
-            type: "Внеурочка",
+            type: "Внеурочная деятельность",
             teacher: t.fullName,
             className: classLabel(cls),
             subjectOrActivity: ext.name,
@@ -265,7 +265,7 @@ function buildFlatRows(
 }
 
 function makeFlatSheet(rows: FlatDistributionRow[]): XLSX.WorkSheet {
-  const header = ["Тип", "Учитель", "Класс", "Предмет/Внеурочка", "Группа", "Часы"];
+  const header = ["Тип", "Учитель", "Класс", "Предмет/Внеурочная деятельность", "Группа", "Часы"];
   const aoa: (string | number)[][] = [header];
   const rowKinds: Array<"header" | "extra" | "normal"> = ["header"];
 
@@ -278,7 +278,7 @@ function makeFlatSheet(rows: FlatDistributionRow[]): XLSX.WorkSheet {
       r.groupLabel ?? "",
       r.hours,
     ]);
-    rowKinds.push(r.type === "Внеурочка" ? "extra" : "normal");
+    rowKinds.push(r.type === "Внеурочная деятельность" ? "extra" : "normal");
   });
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
@@ -882,7 +882,7 @@ export function exportAllToExcel(
   if (extracurricularsData.length > 0) {
     const ws = XLSX.utils.json_to_sheet(extracurricularsData);
     ws['!cols'] = [{ wch: 40 }, { wch: 20 }, { wch: 15 }, { wch: 20 }, { wch: 15 }, { wch: 20 }];
-    XLSX.utils.book_append_sheet(wb, ws, 'Внеурочка');
+    XLSX.utils.book_append_sheet(wb, ws, 'Внеурочная деятельность');
   }
 
   // Лист учебного плана (длинный формат: предмет + класс + часы)

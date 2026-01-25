@@ -11,7 +11,7 @@ export default function Index() {
     { title: "Учителя", count: teachers.length, icon: Users, link: "/teachers", color: "text-blue-600" },
     { title: "Классы", count: classes.length, icon: GraduationCap, link: "/classes", color: "text-green-600" },
     { title: "Предметы", count: subjects.length, icon: BookOpen, link: "/subjects", color: "text-purple-600" },
-    { title: "Внеурочка", count: extracurriculars.length, icon: Palette, link: "/extracurricular", color: "text-pink-600" },
+    { title: "Внеурочная деятельность", count: extracurriculars.length, icon: Palette, link: "/extracurricular", color: "text-pink-600" },
   ];
 
   const hasData = teachers.length > 0 || classes.length > 0 || subjects.length > 0;

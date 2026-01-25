@@ -294,7 +294,7 @@ export default function ImportExport() {
               Учителей: {data.teachers?.length || 0}, 
               Классов: {data.classes?.length || 0}, 
               Предметов: {data.subjects?.length || 0}, 
-              Внеурочка: {data.extracurriculars?.length || 0}
+              Внеурочная деятельность: {data.extracurriculars?.length || 0}
             </AlertDescription>
           </Alert>
         </div>
@@ -475,7 +475,7 @@ export default function ImportExport() {
           <CardContent className="pt-4">
             <div className="flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">Внеурочка</span>
+              <span className="text-sm text-muted-foreground">Внеурочная деятельность</span>
             </div>
             <p className="text-2xl font-bold">{stats.extracurriculars}</p>
           </CardContent>
@@ -718,7 +718,7 @@ export default function ImportExport() {
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">
                   <Sparkles className="h-4 w-4" />
-                  Внеурочка ({extracurriculars.length})
+                  Внеурочная деятельность ({extracurriculars.length})
                 </CardTitle>
               </CardHeader>
               <CardContent className="flex gap-2 flex-wrap">
