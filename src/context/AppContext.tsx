@@ -84,6 +84,7 @@ interface AppContextType {
   // Уроки
   upsertScheduleLesson: (lesson: ScheduleLesson) => void;
   deleteScheduleLesson: (id: string) => void;
+  setScheduleLessons: (lessons: ScheduleLesson[]) => void;
 
   // Закрепления
   upsertScheduleAnchor: (anchor: ScheduleAnchor) => void;
@@ -298,6 +299,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return [...prev, lesson];
     });
   };
+
   const deleteScheduleLesson = (id: string) => {
     setScheduleLessons(prev => prev.filter(l => l.id !== id));
   };
@@ -407,6 +409,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setTeacherAvailabilityCell,
     upsertScheduleLesson,
     deleteScheduleLesson,
+    setScheduleLessons,
     upsertScheduleAnchor,
     deleteScheduleAnchor,
     deleteScheduleAnchorFor,
