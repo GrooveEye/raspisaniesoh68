@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useApp } from "@/context/AppContext";
 import { Button } from "@/components/ui/button";
+import { Download, Sparkles } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -18,6 +19,19 @@ import type { ScheduleAnchor, ScheduleLesson } from "@/types";
 import { getScheduleIssues } from "@/pages/schedule/scheduleUtils";
 import { ScheduleEditorDialog } from "@/pages/schedule/ScheduleEditorDialog";
 import { ScheduleWeekSettingsDialog } from "@/pages/schedule/ScheduleWeekSettingsDialog";
+import { autoDistributeSchedule } from "@/lib/scheduleAutoDistribution";
+import { exportScheduleToExcel } from "@/lib/scheduleExport";
+import { toast } from "@/components/ui/use-toast";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 function classLabel(grade: number, letter: string) {
   return `${grade}${letter}`;
@@ -28,6 +42,7 @@ export default function Schedule() {
     classes,
     subjects,
     teachers,
+    rooms,
     extracurriculars,
     loadAssignments,
     weekGrid,
@@ -65,6 +80,7 @@ export default function Schedule() {
   const [selectedClassId, setSelectedClassId] = useState<string>(sortedClasses[0]?.id || "");
   const [editorOpen, setEditorOpen] = useState(false);
   const [weekOpen, setWeekOpen] = useState(false);
+  const [autoDistributeOpen, setAutoDistributeOpen] = useState(false);
   const [editorDefaults, setEditorDefaults] = useState<{
     classId: string;
     day: string;
@@ -132,6 +148,42 @@ export default function Schedule() {
       });
   }, [scheduleAnchors, classes, subjects, extracurriculars]);
 
+  const handleAutoDistribute = () => {
+    const result = autoDistributeSchedule({
+      classes,
+      loadAssignments,
+      teachers,
+      rooms,
+      anchors: scheduleAnchors.filter((a) => a.subjectId),
+      weekGrid,
+      teacherAvailability,
+      existingLessons: scheduleLessons,
+    });
+
+    for (const l of result.lessons) {
+      upsertScheduleLesson(l);
+    }
+
+    setAutoDistributeOpen(false);
+    toast({
+      title: "Автораспределение завершено",
+      description: result.conflicts.length
+        ? `Создано ${result.lessons.length} уроков. Конфликтов: ${result.conflicts.length}`
+        : `Создано ${result.lessons.length} уроков без конфликтов`,
+    });
+  };
+
+  const handleExport = () => {
+    exportScheduleToExcel({
+      lessons: scheduleLessons,
+      classes,
+      subjects,
+      teachers,
+      weekGrid,
+    });
+    toast({ title: "Расписание экспортировано", description: "Файл Расписание.xlsx загружен" });
+  };
+
   return (
     <div className="space-y-6">
       <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -141,6 +193,14 @@ export default function Schedule() {
         </div>
 
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Button variant="default" onClick={() => setAutoDistributeOpen(true)}>
+            <Sparkles className="w-4 h-4 mr-2" />
+            Автораспределение
+          </Button>
+          <Button variant="secondary" onClick={handleExport}>
+            <Download className="w-4 h-4 mr-2" />
+            Экспорт
+          </Button>
           <div className="min-w-[240px]">
             <Select value={selectedClassId} onValueChange={setSelectedClassId}>
               <SelectTrigger>
@@ -164,6 +224,7 @@ export default function Schedule() {
       <Tabs defaultValue="schedule">
         <TabsList>
           <TabsTrigger value="schedule">Расписание</TabsTrigger>
+          <TabsTrigger value="schedule-alt">Расписание (по классам)</TabsTrigger>
           <TabsTrigger value="availability">Доступность</TabsTrigger>
           <TabsTrigger value="anchors">Закрепления</TabsTrigger>
         </TabsList>
@@ -242,6 +303,105 @@ export default function Schedule() {
                       </div>
                     );
                   })}
+                </div>
+              </div>
+            </>
+          )}
+        </TabsContent>
+
+        <TabsContent value="schedule-alt" className="space-y-4">
+          {!selectedClass ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Нет классов</CardTitle>
+              </CardHeader>
+              <CardContent className="text-muted-foreground">Сначала создайте классы в справочнике.</CardContent>
+            </Card>
+          ) : (
+            <>
+              {selectedClassIssues.length > 0 ? (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Конфликты в выбранном классе</CardTitle>
+                  </CardHeader>
+                  <CardContent className="text-sm text-muted-foreground">
+                    Найдено: {selectedClassIssues.length}. Откройте проблемные слоты — в редакторе будут подсказки.
+                  </CardContent>
+                </Card>
+              ) : null}
+
+              <div className="rounded-lg border bg-card overflow-auto">
+                <div
+                  className="grid"
+                  style={{
+                    gridTemplateColumns: `minmax(80px, 100px) minmax(60px, 80px) repeat(${sortedClasses.length}, minmax(180px, 1fr))`,
+                  }}
+                >
+                  <div className="sticky top-0 bg-card border-b p-3 font-medium">День</div>
+                  <div className="sticky top-0 bg-card border-b p-3 font-medium">Урок</div>
+                  {sortedClasses.map((c) => (
+                    <div key={c.id} className="sticky top-0 bg-card border-b p-3 font-medium">
+                      {classLabel(c.grade, c.letter)}
+                    </div>
+                  ))}
+
+                  {days.map((day) =>
+                    slots.map((slot, slotIdx) => {
+                      return (
+                        <div key={`${day}-${slot}`} className="contents">
+                          {slotIdx === 0 ? (
+                            <div
+                              key={`day-${day}`}
+                              className="border-b p-3 text-sm font-medium"
+                              style={{ gridRow: `span ${slots.length}` }}
+                            >
+                              {day}
+                            </div>
+                          ) : null}
+                          <div key={`slot-${day}-${slot}`} className="border-b p-3 text-sm text-muted-foreground">
+                            {slot === 0 ? "0-й" : `${slot}-й`}
+                          </div>
+                          {sortedClasses.map((cls) => {
+                            const cellKey = `${cls.id}__${day}__${slot}`;
+                            const lesson = scheduleLessons.find(
+                              (l) => l.classId === cls.id && l.day === day && l.slot === slot
+                            );
+                            const hasIssues = lesson ? (issuesByLessonId.get(lesson.id) || []).length > 0 : false;
+                            const subject = lesson ? subjects.find((s) => s.id === lesson.subjectId) : null;
+                            const teacher = lesson ? teachers.find((t) => t.id === lesson.teacherId) : null;
+                            const room = lesson?.room;
+
+                            return (
+                              <button
+                                key={cellKey}
+                                type="button"
+                                onClick={() => {
+                                  const existing = lesson;
+                                  const issues = existing ? (issuesByLessonId.get(existing.id) || []).map((i) => i.message) : [];
+                                  setEditorDefaults({ classId: cls.id, day, slot, existing, issues });
+                                  setEditorOpen(true);
+                                }}
+                                className={
+                                  "border-b p-3 text-left hover:bg-muted/50 transition-colors focus:outline-none focus:ring-2 focus:ring-ring" +
+                                  (hasIssues ? " ring-1 ring-destructive" : "")
+                                }
+                              >
+                                {lesson ? (
+                                  <div className="space-y-1">
+                                    <div className="font-medium leading-snug">{subject?.name || "—"}</div>
+                                    <div className="text-sm text-muted-foreground leading-snug">{teacher?.fullName || "—"}</div>
+                                    {room ? <div className="text-xs text-muted-foreground">{room}</div> : null}
+                                  </div>
+                                ) : (
+                                  <div className="text-sm text-muted-foreground">Добавить…</div>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
               </div>
             </>
@@ -405,6 +565,22 @@ export default function Schedule() {
         value={weekGrid}
         onSave={(grid) => setWeekGrid(grid)}
       />
+
+      <AlertDialog open={autoDistributeOpen} onOpenChange={setAutoDistributeOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Автораспределение расписания</AlertDialogTitle>
+            <AlertDialogDescription>
+              Это заполнит расписание на основе распределения нагрузки, закреплений и доступности учителей.
+              Существующие уроки будут заменены. Продолжить?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction onClick={handleAutoDistribute}>Запустить</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
