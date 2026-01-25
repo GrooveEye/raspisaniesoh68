@@ -9,6 +9,7 @@ import Index from "./pages/Index";
 import Teachers from "./pages/Teachers";
 import Classes from "./pages/Classes";
 import Subjects from "./pages/Subjects";
+import Rooms from "./pages/Rooms";
 import Extracurricular from "./pages/Extracurricular";
 import Curriculum from "./pages/Curriculum";
 import Distribution from "./pages/Distribution";
@@ -38,6 +39,7 @@ const App = () => {
                 <Route path="/teachers" element={<Teachers />} />
                 <Route path="/classes" element={<Classes />} />
                 <Route path="/subjects" element={<Subjects />} />
+                <Route path="/rooms" element={<Rooms />} />
                 <Route path="/extracurricular" element={<Extracurricular />} />
                 <Route path="/curriculum" element={<Curriculum />} />
                 <Route path="/distribution" element={<Distribution />} />

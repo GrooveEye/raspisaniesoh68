@@ -40,6 +40,18 @@ export interface Subject {
   groupSplitThreshold?: number; // порог для деления (кол-во учеников)
 }
 
+export interface Room {
+  id: string;
+  /** Номер или название (например: "101", "спортзал") */
+  name: string;
+  /** Этаж (необязательно) */
+  floor?: number;
+  /** Кабинет универсальный (может использоваться разными предметами) */
+  isUniversal: boolean;
+  /** Предметы, для которых кабинет подходит (если не универсальный) */
+  subjectIds: string[];
+}
+
 export interface Extracurricular {
   id: string;
   name: string;
@@ -101,7 +113,9 @@ export interface ScheduleLesson {
 export interface ScheduleAnchor {
   id: string;
   classId: string;
-  subjectId: string;
+  /** Закрепление может относиться к предмету или к внеурочной деятельности */
+  subjectId?: string;
+  extracurricularId?: string;
   day: string;
   slot: number;
 }
@@ -126,6 +140,7 @@ export interface AppState {
   teachers: Teacher[];
   classes: SchoolClass[];
   subjects: Subject[];
+  rooms: Room[];
   extracurriculars: Extracurricular[];
   loadAssignments: LoadAssignment[];
   extracurricularAssignments: ExtracurricularAssignment[];
