@@ -37,7 +37,8 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { useApp } from "@/context/AppContext";
 import type { Teacher } from "@/types";
-import { QuickBackupActions } from "@/components/importExport/QuickBackupActions";
+import { SectionImportExportActions } from "@/components/importExport/SectionImportExportActions";
+import { exportTeachersToExcel, parseTeachersFromData } from "@/lib/exportUtils";
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -55,7 +56,7 @@ const emptyTeacher: Omit<Teacher, "id"> = {
 };
 
 export default function Teachers() {
-  const { teachers, subjects, rooms, addTeacher, updateTeacher, deleteTeacher } = useApp();
+  const { teachers, subjects, rooms, addTeacher, updateTeacher, deleteTeacher, setTeachers } = useApp();
   const [searchQuery, setSearchQuery] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingTeacher, setEditingTeacher] = useState<Teacher | null>(null);
@@ -231,7 +232,32 @@ export default function Teachers() {
           <p className="text-muted-foreground">Управление педагогическим составом</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <QuickBackupActions />
+          <SectionImportExportActions<Teacher>
+            sectionLabel="Учителя"
+            exportExcel={() => exportTeachersToExcel(teachers)}
+            exportJsonData={() => teachers}
+            importFromTable={(table) =>
+              parseTeachersFromData(table).map((t) => ({ ...t, id: crypto.randomUUID() }))
+            }
+            importFromJson={(arr) =>
+              (arr as any[]).map((t) => ({
+                id: (t?.id as string) || crypto.randomUUID(),
+                fullName: String(t?.fullName ?? "").trim(),
+                position: String(t?.position ?? "Учитель").trim(),
+                qualification: (t?.qualification as Teacher["qualification"]) ?? "без категории",
+                subjects: Array.isArray(t?.subjects) ? t.subjects.map((x: any) => String(x).trim()).filter(Boolean) : [],
+                minHours: Number(t?.minHours ?? 0) || 0,
+                maxHours: Number(t?.maxHours ?? 18) || 18,
+                status: (t?.status as Teacher["status"]) ?? "штатный",
+                primaryRoom: t?.primaryRoom ? String(t.primaryRoom) : undefined,
+                isUniversalRoom: t?.isUniversalRoom ? Boolean(t.isUniversalRoom) : undefined,
+                preferredGrades: Array.isArray(t?.preferredGrades)
+                  ? t.preferredGrades.map((n: any) => Number(n)).filter((n: number) => Number.isFinite(n))
+                  : undefined,
+              }))
+            }
+            onReplace={(items) => setTeachers(items)}
+          />
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
               <Button onClick={() => handleOpenDialog()}>

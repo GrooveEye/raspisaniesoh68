@@ -30,7 +30,8 @@ import { Switch } from "@/components/ui/switch";
 import { useApp } from "@/context/AppContext";
 import type { Subject } from "@/types";
 import { AnchorsManagerDialog } from "@/components/schedule/AnchorsManagerDialog";
-import { QuickBackupActions } from "@/components/importExport/QuickBackupActions";
+import { SectionImportExportActions } from "@/components/importExport/SectionImportExportActions";
+import { exportSubjectsToExcel, parseSubjectsFromData } from "@/lib/exportUtils";
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -53,7 +54,7 @@ const emptySubject: Omit<Subject, 'id'> = {
 };
 
 export default function Subjects() {
-  const { subjects, addSubject, updateSubject, deleteSubject } = useApp();
+  const { subjects, addSubject, updateSubject, deleteSubject, setSubjects } = useApp();
   const [searchQuery, setSearchQuery] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
@@ -121,7 +122,27 @@ export default function Subjects() {
           <p className="text-muted-foreground">Учебные предметы и настройки деления на группы</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <QuickBackupActions />
+          <SectionImportExportActions<Subject>
+            sectionLabel="Предметы"
+            exportExcel={() => exportSubjectsToExcel(subjects)}
+            exportJsonData={() => subjects}
+            importFromTable={(table) =>
+              parseSubjectsFromData(table).map((s) => ({ ...s, id: crypto.randomUUID() }))
+            }
+            importFromJson={(arr) =>
+              (arr as any[]).map((s) => ({
+                id: (s?.id as string) || crypto.randomUUID(),
+                name: String(s?.name ?? "").trim(),
+                area: String(s?.area ?? "Общие").trim(),
+                requiresGroupSplit: Boolean(s?.requiresGroupSplit),
+                groupSplitThreshold:
+                  s?.groupSplitThreshold === undefined || s?.groupSplitThreshold === null || s?.groupSplitThreshold === ""
+                    ? undefined
+                    : Number(s.groupSplitThreshold),
+              }))
+            }
+            onReplace={(items) => setSubjects(items)}
+          />
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
               <Button onClick={() => handleOpenDialog()}>

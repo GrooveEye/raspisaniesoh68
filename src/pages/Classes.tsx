@@ -28,7 +28,8 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { useApp } from "@/context/AppContext";
 import type { SchoolClass } from "@/types";
-import { QuickBackupActions } from "@/components/importExport/QuickBackupActions";
+import { SectionImportExportActions } from "@/components/importExport/SectionImportExportActions";
+import { exportClassesToExcel, parseClassesFromData } from "@/lib/exportUtils";
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -44,7 +45,7 @@ const grades = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
 const letters = ["А", "Б", "В", "Г", "Д", "Е", "Ж", "З"];
 
 export default function Classes() {
-  const { classes, addClass, updateClass, deleteClass, teachers } = useApp();
+  const { classes, addClass, updateClass, deleteClass, teachers, setClasses } = useApp();
   const [searchQuery, setSearchQuery] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingClass, setEditingClass] = useState<SchoolClass | null>(null);
@@ -123,7 +124,25 @@ export default function Classes() {
           <p className="text-muted-foreground">Управление классами и параллелями</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <QuickBackupActions />
+          <SectionImportExportActions<SchoolClass>
+            sectionLabel="Классы"
+            exportExcel={() => exportClassesToExcel(classes, teachers)}
+            exportJsonData={() => classes}
+            importFromTable={(table) =>
+              parseClassesFromData(table).map((c) => ({ ...c, id: crypto.randomUUID() }))
+            }
+            importFromJson={(arr) =>
+              (arr as any[]).map((c) => ({
+                id: (c?.id as string) || crypto.randomUUID(),
+                grade: Number(c?.grade ?? 1) || 1,
+                letter: String(c?.letter ?? "А").toUpperCase(),
+                studentCount: Number(c?.studentCount ?? 25) || 25,
+                profile: (c?.profile as SchoolClass["profile"]) ?? "общеобразовательный",
+                classTeacherId: c?.classTeacherId ? String(c.classTeacherId) : undefined,
+              }))
+            }
+            onReplace={(items) => setClasses(items)}
+          />
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
               <Button onClick={() => handleOpenDialog()}>

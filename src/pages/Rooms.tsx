@@ -22,7 +22,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { useApp } from "@/context/AppContext";
 import type { Room } from "@/types";
-import { QuickBackupActions } from "@/components/importExport/QuickBackupActions";
+import { SectionImportExportActions } from "@/components/importExport/SectionImportExportActions";
+import { exportRoomsToExcel, parseRoomsFromData } from "@/lib/exportUtils";
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -34,7 +35,7 @@ const emptyRoom: Omit<Room, "id"> = {
 };
 
 export default function Rooms() {
-  const { rooms, subjects, addRoom, updateRoom, deleteRoom } = useApp();
+  const { rooms, subjects, addRoom, updateRoom, deleteRoom, setRooms } = useApp();
   const [searchQuery, setSearchQuery] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingRoom, setEditingRoom] = useState<Room | null>(null);
@@ -92,7 +93,26 @@ export default function Rooms() {
           <p className="text-muted-foreground">Справочник кабинетов: номер/название, предметы, этаж</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <QuickBackupActions />
+          <SectionImportExportActions<Room>
+            sectionLabel="Кабинеты"
+            exportExcel={() => exportRoomsToExcel(rooms, subjects)}
+            exportJsonData={() => rooms}
+            importFromTable={(table) =>
+              parseRoomsFromData(table, subjects).map((r) => ({ ...r, id: crypto.randomUUID() }))
+            }
+            importFromJson={(arr) =>
+              (arr as any[]).map((r) => ({
+                id: (r?.id as string) || crypto.randomUUID(),
+                name: String(r?.name ?? "").trim(),
+                floor: r?.floor === undefined || r?.floor === null || r?.floor === "" ? undefined : Number(r.floor),
+                isUniversal: Boolean(r?.isUniversal),
+                subjectIds: Array.isArray(r?.subjectIds)
+                  ? r.subjectIds.map((x: any) => String(x)).filter(Boolean)
+                  : [],
+              }))
+            }
+            onReplace={(items) => setRooms(items)}
+          />
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
               <Button onClick={() => handleOpenDialog()}>
