@@ -36,6 +36,7 @@ import { useApp } from "@/context/AppContext";
 import { toast } from "sonner";
 import type { Extracurricular, ExtracurricularAssignment } from "@/types";
 import { AnchorsManagerDialog } from "@/components/schedule/AnchorsManagerDialog";
+import { QuickBackupActions } from "@/components/importExport/QuickBackupActions";
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -269,7 +270,8 @@ export default function ExtracurricularPage() {
           <h1 className="text-3xl font-bold">Внеурочная деятельность</h1>
           <p className="text-muted-foreground">Кружки, секции и факультативы</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <QuickBackupActions />
           <Dialog open={isAssignDialogOpen} onOpenChange={setIsAssignDialogOpen}>
             <DialogTrigger asChild>
               <Button variant="outline" onClick={() => handleOpenAssignDialog()}>

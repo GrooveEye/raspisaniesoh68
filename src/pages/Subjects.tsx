@@ -30,6 +30,7 @@ import { Switch } from "@/components/ui/switch";
 import { useApp } from "@/context/AppContext";
 import type { Subject } from "@/types";
 import { AnchorsManagerDialog } from "@/components/schedule/AnchorsManagerDialog";
+import { QuickBackupActions } from "@/components/importExport/QuickBackupActions";
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -119,14 +120,16 @@ export default function Subjects() {
           <h1 className="text-3xl font-bold">Предметы</h1>
           <p className="text-muted-foreground">Учебные предметы и настройки деления на группы</p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={() => handleOpenDialog()}>
-              <Plus className="mr-2 h-4 w-4" />
-              Добавить предмет
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
+        <div className="flex flex-wrap items-center gap-2">
+          <QuickBackupActions />
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <DialogTrigger asChild>
+              <Button onClick={() => handleOpenDialog()}>
+                <Plus className="mr-2 h-4 w-4" />
+                Добавить предмет
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
             <DialogHeader>
               <DialogTitle>
                 {editingSubject ? "Редактировать предмет" : "Новый предмет"}
@@ -211,8 +214,9 @@ export default function Subjects() {
                 {editingSubject ? "Сохранить" : "Добавить"}
               </Button>
             </div>
-          </DialogContent>
-        </Dialog>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       <div className="flex items-center gap-4">

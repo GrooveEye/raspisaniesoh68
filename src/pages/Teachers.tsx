@@ -37,6 +37,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { useApp } from "@/context/AppContext";
 import type { Teacher } from "@/types";
+import { QuickBackupActions } from "@/components/importExport/QuickBackupActions";
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -229,14 +230,16 @@ export default function Teachers() {
           <h1 className="text-3xl font-bold">Учителя</h1>
           <p className="text-muted-foreground">Управление педагогическим составом</p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={() => handleOpenDialog()}>
-              <Plus className="mr-2 h-4 w-4" />
-              Добавить учителя
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-2xl">
+        <div className="flex flex-wrap items-center gap-2">
+          <QuickBackupActions />
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <DialogTrigger asChild>
+              <Button onClick={() => handleOpenDialog()}>
+                <Plus className="mr-2 h-4 w-4" />
+                Добавить учителя
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>
                 {editingTeacher ? "Редактировать учителя" : "Новый учитель"}
@@ -463,8 +466,9 @@ export default function Teachers() {
                 {editingTeacher ? "Сохранить" : "Добавить"}
               </Button>
             </div>
-          </DialogContent>
-        </Dialog>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-3">

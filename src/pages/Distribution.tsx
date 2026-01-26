@@ -36,6 +36,7 @@ import type { LoadAssignment, TeacherLoad } from "@/types";
 import { DistributionEditorDialog } from "@/pages/distribution/DistributionEditorDialog";
 import { useDistributionIssues } from "@/pages/distribution/distributionIssues";
 import { exportDistributionToExcel } from "@/lib/exportUtils";
+import { QuickBackupActions } from "@/components/importExport/QuickBackupActions";
 
 export default function Distribution() {
   const {
@@ -573,6 +574,7 @@ export default function Distribution() {
         </div>
 
         <div className="flex flex-wrap gap-2">
+          <QuickBackupActions />
           <Button
             asChild
             variant="outline"

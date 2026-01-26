@@ -28,6 +28,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { useApp } from "@/context/AppContext";
 import type { SchoolClass } from "@/types";
+import { QuickBackupActions } from "@/components/importExport/QuickBackupActions";
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -121,14 +122,16 @@ export default function Classes() {
           <h1 className="text-3xl font-bold">Классы</h1>
           <p className="text-muted-foreground">Управление классами и параллелями</p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={() => handleOpenDialog()}>
-              <Plus className="mr-2 h-4 w-4" />
-              Добавить класс
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
+        <div className="flex flex-wrap items-center gap-2">
+          <QuickBackupActions />
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <DialogTrigger asChild>
+              <Button onClick={() => handleOpenDialog()}>
+                <Plus className="mr-2 h-4 w-4" />
+                Добавить класс
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
             <DialogHeader>
               <DialogTitle>
                 {editingClass ? "Редактировать класс" : "Новый класс"}
@@ -242,8 +245,9 @@ export default function Classes() {
                 {editingClass ? "Сохранить" : "Добавить"}
               </Button>
             </div>
-          </DialogContent>
-        </Dialog>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       <div className="flex items-center gap-4">
