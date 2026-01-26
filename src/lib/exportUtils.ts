@@ -4,11 +4,18 @@ import type {
   Teacher,
   SchoolClass,
   Subject,
+  Room,
   Extracurricular,
   LoadAssignment,
   ExtracurricularAssignment,
-  CurriculumPlan
+  CurriculumPlan,
+  WeekGrid,
+  TeacherAvailability,
+  ScheduleLesson,
+  ScheduleAnchor,
 } from '@/types';
+
+const EXTR_PREFIX = "extr_";
 
 export type CurriculumPlanRow = {
   subjectName: string;
@@ -22,12 +29,22 @@ export function exportToJSON(data: {
   teachers: Teacher[];
   classes: SchoolClass[];
   subjects: Subject[];
+  rooms: Room[];
   extracurriculars: Extracurricular[];
   loadAssignments: LoadAssignment[];
   extracurricularAssignments: ExtracurricularAssignment[];
   curriculumPlan: CurriculumPlan;
+  weekGrid: WeekGrid;
+  teacherAvailability: TeacherAvailability;
+  scheduleLessons: ScheduleLesson[];
+  scheduleAnchors: ScheduleAnchor[];
 }) {
-  const jsonString = JSON.stringify(data, null, 2);
+  const payload = {
+    schemaVersion: 2,
+    exportedAt: new Date().toISOString(),
+    ...data,
+  };
+  const jsonString = JSON.stringify(payload, null, 2);
   const blob = new Blob([jsonString], { type: 'application/json' });
   saveAs(blob, `school-plan-export-${new Date().toISOString().split('T')[0]}.json`);
 }
@@ -58,7 +75,10 @@ export function exportTeachersToExcel(teachers: Teacher[]) {
     'Предметы': t.subjects.join(', '),
     'Мин. часов': t.minHours,
     'Макс. часов': t.maxHours,
-    'Статус': t.status
+    'Статус': t.status,
+    'Основной кабинет': t.primaryRoom || '',
+    'Универсальный кабинет': t.isUniversalRoom ? 'Да' : 'Нет',
+    'Предпочт. параллели': (t.preferredGrades ?? []).join(', '),
   }));
   
   const ws = XLSX.utils.json_to_sheet(data);
@@ -73,7 +93,10 @@ export function exportTeachersToExcel(teachers: Teacher[]) {
     { wch: 40 }, // Предметы
     { wch: 12 }, // Мин. часов
     { wch: 12 }, // Макс. часов
-    { wch: 25 }  // Статус
+    { wch: 25 }, // Статус
+    { wch: 18 }, // Основной кабинет
+    { wch: 22 }, // Универсальный кабинет
+    { wch: 22 }, // Предпочт. параллели
   ];
   ws['!cols'] = colWidths;
   
@@ -815,10 +838,15 @@ export function exportAllToExcel(
   teachers: Teacher[],
   classes: SchoolClass[],
   subjects: Subject[],
+  rooms: Room[],
   extracurriculars: Extracurricular[],
   loadAssignments: LoadAssignment[],
   extracurricularAssignments: ExtracurricularAssignment[],
-  curriculumPlan: CurriculumPlan
+  curriculumPlan: CurriculumPlan,
+  weekGrid: WeekGrid,
+  teacherAvailability: TeacherAvailability,
+  scheduleLessons: ScheduleLesson[],
+  scheduleAnchors: ScheduleAnchor[]
 ) {
   const wb = XLSX.utils.book_new();
 
@@ -830,12 +858,43 @@ export function exportAllToExcel(
     'Предметы': t.subjects.join(', '),
     'Мин. часов': t.minHours,
     'Макс. часов': t.maxHours,
-    'Статус': t.status
+    'Статус': t.status,
+    'Основной кабинет': t.primaryRoom || '',
+    'Универсальный кабинет': t.isUniversalRoom ? 'Да' : 'Нет',
+    'Предпочт. параллели': (t.preferredGrades ?? []).join(', '),
   }));
   if (teachersData.length > 0) {
     const ws = XLSX.utils.json_to_sheet(teachersData);
-    ws['!cols'] = [{ wch: 35 }, { wch: 20 }, { wch: 15 }, { wch: 40 }, { wch: 12 }, { wch: 12 }, { wch: 25 }];
+    ws['!cols'] = [
+      { wch: 35 },
+      { wch: 20 },
+      { wch: 15 },
+      { wch: 40 },
+      { wch: 12 },
+      { wch: 12 },
+      { wch: 25 },
+      { wch: 18 },
+      { wch: 22 },
+      { wch: 22 },
+    ];
     XLSX.utils.book_append_sheet(wb, ws, 'Учителя');
+  }
+
+  // Лист кабинетов
+  const subjectById = new Map(subjects.map((s) => [s.id, s] as const));
+  const roomsData = rooms.map((r) => ({
+    'Название': r.name,
+    'Этаж': r.floor ?? '',
+    'Универсальный': r.isUniversal ? 'Да' : 'Нет',
+    'Подходит для предметов': (r.subjectIds ?? [])
+      .map((id) => subjectById.get(id)?.name)
+      .filter(Boolean)
+      .join(', '),
+  }));
+  if (roomsData.length > 0) {
+    const ws = XLSX.utils.json_to_sheet(roomsData);
+    ws['!cols'] = [{ wch: 18 }, { wch: 8 }, { wch: 14 }, { wch: 50 }];
+    XLSX.utils.book_append_sheet(wb, ws, 'Кабинеты');
   }
 
   // Лист классов
@@ -897,6 +956,113 @@ export function exportAllToExcel(
     );
     ws['!cols'] = [{ wch: 35 }, { wch: 10 }, { wch: 14 }];
     XLSX.utils.book_append_sheet(wb, ws, 'Учебный план');
+  }
+
+  // Лист закреплений
+  const classById = new Map(classes.map((c) => [c.id, c] as const));
+  const extraById = new Map(extracurriculars.map((e) => [e.id, e] as const));
+  const anchorsData = scheduleAnchors.map((a) => {
+    const cls = classById.get(a.classId);
+    const clsLabel = cls ? `${cls.grade}${cls.letter}` : a.classId;
+
+    const isExtra = !!a.extracurricularId;
+    const itemName = isExtra
+      ? extraById.get(a.extracurricularId!)?.name ?? a.extracurricularId
+      : subjectById.get(a.subjectId!)?.name ?? a.subjectId;
+
+    return {
+      'Класс': clsLabel,
+      'Тип': isExtra ? 'Внеурочная деятельность' : 'Предмет',
+      'Предмет/Активность': itemName,
+      'День': a.day,
+      'Урок': a.slot,
+    };
+  });
+  if (anchorsData.length > 0) {
+    const ws = XLSX.utils.json_to_sheet(anchorsData);
+    ws['!cols'] = [{ wch: 10 }, { wch: 22 }, { wch: 40 }, { wch: 14 }, { wch: 8 }];
+    XLSX.utils.book_append_sheet(wb, ws, 'Закрепления');
+  }
+
+  // Лист настроек недели
+  {
+    const ws = XLSX.utils.json_to_sheet([
+      {
+        'Дней в неделе': weekGrid.weekType,
+        'Есть 0-й урок': weekGrid.includeZeroLesson ? 'Да' : 'Нет',
+        'Уроков в день': weekGrid.slotsPerDay,
+      },
+    ]);
+    ws['!cols'] = [{ wch: 14 }, { wch: 14 }, { wch: 14 }];
+    XLSX.utils.book_append_sheet(wb, ws, 'Сетка недели');
+  }
+
+  // Лист доступности учителей (плоский формат)
+  {
+    const teacherById = new Map(teachers.map((t) => [t.id, t] as const));
+    const rows: Array<Record<string, string | number>> = [];
+    for (const [teacherId, byDay] of Object.entries(teacherAvailability ?? {})) {
+      for (const [day, bySlot] of Object.entries(byDay ?? {})) {
+        for (const [slotRaw, available] of Object.entries(bySlot ?? {})) {
+          rows.push({
+            'Учитель': teacherById.get(teacherId)?.fullName ?? teacherId,
+            'День': day,
+            'Урок': Number(slotRaw),
+            'Доступен': available ? 'Да' : 'Нет',
+          });
+        }
+      }
+    }
+    if (rows.length > 0) {
+      const ws = XLSX.utils.json_to_sheet(rows);
+      ws['!cols'] = [{ wch: 32 }, { wch: 14 }, { wch: 8 }, { wch: 10 }];
+      XLSX.utils.book_append_sheet(wb, ws, 'Доступность');
+    }
+  }
+
+  // Лист расписания
+  {
+    const teacherById = new Map(teachers.map((t) => [t.id, t] as const));
+    const subjectNameById = new Map(subjects.map((s) => [s.id, s.name] as const));
+    const extraNameById = new Map(extracurriculars.map((e) => [e.id, e.name] as const));
+
+    const rows = scheduleLessons.map((l) => {
+      const cls = classById.get(l.classId);
+      const clsLabel = cls ? `${cls.grade}${cls.letter}` : l.classId;
+
+      const teacherName = teacherById.get(l.teacherId)?.fullName ?? l.teacherId;
+      const subjOrExtra = l.subjectId?.startsWith(EXTR_PREFIX)
+        ? extraNameById.get(l.subjectId.slice(EXTR_PREFIX.length)) ?? l.subjectId
+        : subjectNameById.get(l.subjectId) ?? l.subjectId;
+
+      return {
+        'Класс': clsLabel,
+        'День': l.day,
+        'Урок': l.slot,
+        'Предмет/Внеурочная деятельность': subjOrExtra,
+        'Учитель': teacherName,
+        'Кабинет': l.room ?? '',
+        'Группа': l.isGroup ? `Группа ${l.groupNumber ?? ''}`.trim() : '',
+        'Заметки': l.notes ?? '',
+        'SharedGroupId': l.sharedGroupId ?? '',
+      };
+    });
+
+    if (rows.length > 0) {
+      const ws = XLSX.utils.json_to_sheet(rows);
+      ws['!cols'] = [
+        { wch: 10 },
+        { wch: 14 },
+        { wch: 8 },
+        { wch: 44 },
+        { wch: 32 },
+        { wch: 12 },
+        { wch: 12 },
+        { wch: 22 },
+        { wch: 18 },
+      ];
+      XLSX.utils.book_append_sheet(wb, ws, 'Расписание');
+    }
   }
 
   XLSX.writeFile(wb, `school-plan-full-${new Date().toISOString().split('T')[0]}.xlsx`);
@@ -1056,7 +1222,18 @@ export function parseCurriculumPlanFromData(data: any[][]): CurriculumPlanRow[] 
 // === CSV Export ===
 
 export function exportTeachersToCSV(teachers: Teacher[]) {
-  const headers = ['ФИО', 'Должность', 'Категория', 'Предметы', 'Мин. часов', 'Макс. часов', 'Статус'];
+  const headers = [
+    'ФИО',
+    'Должность',
+    'Категория',
+    'Предметы',
+    'Мин. часов',
+    'Макс. часов',
+    'Статус',
+    'Основной кабинет',
+    'Универсальный кабинет',
+    'Предпочт. параллели',
+  ];
   const rows = teachers.map(t => [
     t.fullName,
     t.position,
@@ -1064,7 +1241,10 @@ export function exportTeachersToCSV(teachers: Teacher[]) {
     t.subjects.join('; '),
     t.minHours.toString(),
     t.maxHours.toString(),
-    t.status
+    t.status,
+    t.primaryRoom || '',
+    t.isUniversalRoom ? 'Да' : 'Нет',
+    (t.preferredGrades ?? []).join('; '),
   ]);
   
   const csvContent = [headers, ...rows]
@@ -1208,6 +1388,10 @@ export function parseTeachersFromData(data: any[][]): Omit<Teacher, 'id'>[] {
     const minHoursIndex = headers.findIndex(h => h.includes('мин') && h.includes('час'));
     const maxHoursIndex = headers.findIndex(h => h.includes('макс') && h.includes('час'));
     const statusIndex = headers.findIndex(h => h.includes('статус'));
+
+    const primaryRoomIndex = headers.findIndex(h => h.includes('основн') && h.includes('кабин'));
+    const universalRoomIndex = headers.findIndex(h => h.includes('универс') && h.includes('кабин'));
+    const preferredGradesIndex = headers.findIndex(h => h.includes('предпоч') && (h.includes('паралл') || h.includes('класс')));
     
     const fullName = row[fioIndex >= 0 ? fioIndex : 0]?.toString().trim();
     if (!fullName) continue;
@@ -1224,6 +1408,18 @@ export function parseTeachersFromData(data: any[][]): Omit<Teacher, 'id'>[] {
     let status: Teacher['status'] = 'штатный';
     if (statusRaw.includes('внешн')) status = 'внешний совместитель';
     else if (statusRaw.includes('внутр')) status = 'внутренний совместитель';
+
+    const primaryRoom = (row[primaryRoomIndex] ?? '').toString().trim();
+    const universalRaw = (row[universalRoomIndex] ?? '').toString().toLowerCase().trim();
+    const isUniversalRoom = universalRaw === 'да' || universalRaw === 'true' || universalRaw === '1';
+
+    const preferredRaw = (row[preferredGradesIndex] ?? '').toString();
+    const preferredGrades = preferredRaw
+      ? preferredRaw
+          .split(/[,;]/)
+          .map((x) => parseInt(x.trim()))
+          .filter((n) => Number.isFinite(n) && n >= 1 && n <= 11)
+      : undefined;
     
     teachers.push({
       fullName,
@@ -1232,7 +1428,10 @@ export function parseTeachersFromData(data: any[][]): Omit<Teacher, 'id'>[] {
       subjects,
       minHours: parseInt(row[minHoursIndex >= 0 ? minHoursIndex : 4]) || 18,
       maxHours: parseInt(row[maxHoursIndex >= 0 ? maxHoursIndex : 5]) || 36,
-      status
+      status,
+      primaryRoom: primaryRoom || undefined,
+      isUniversalRoom: isUniversalRoom || undefined,
+      preferredGrades,
     });
   }
   

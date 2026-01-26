@@ -13,6 +13,7 @@ import type {
   TeacherAvailability,
   ScheduleLesson,
   ScheduleAnchor,
+  AppState,
 } from '@/types';
 
 interface AppContextType {
@@ -93,13 +94,14 @@ interface AppContextType {
   deleteExtracurricularAnchorFor: (classId: string, extracurricularId: string) => void;
   
   // Импорт/экспорт
-  importData: (data: Partial<{
-    teachers: Teacher[];
-    classes: SchoolClass[];
-    subjects: Subject[];
-    extracurriculars: Extracurricular[];
-    curriculumPlan: CurriculumPlan;
-  }>) => void;
+  /**
+   * Импорт-merge: добавляет новые данные к текущим.
+   * Используйте для импорта отдельных справочников/плана.
+   */
+  importData: (data: Partial<AppState>) => void;
+
+  /** Полный restore: заменяет всё текущее состояние данными из файла. */
+  restoreAllData: (data: Partial<AppState>) => void;
   clearAllData: () => void;
 }
 
@@ -330,18 +332,43 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   // Импорт данных
-  const importData = (data: Partial<{
-    teachers: Teacher[];
-    classes: SchoolClass[];
-    subjects: Subject[];
-    extracurriculars: Extracurricular[];
-    curriculumPlan: CurriculumPlan;
-  }>) => {
-    if (data.teachers) setTeachers(prev => [...prev, ...data.teachers!]);
-    if (data.classes) setClasses(prev => [...prev, ...data.classes!]);
-    if (data.subjects) setSubjects(prev => [...prev, ...data.subjects!]);
-    if (data.extracurriculars) setExtracurriculars(prev => [...prev, ...data.extracurriculars!]);
-    if (data.curriculumPlan) setCurriculumPlan(prev => ({ ...prev, ...data.curriculumPlan! }));
+  const importData = (data: Partial<AppState>) => {
+    if (data.teachers) setTeachers((prev) => [...prev, ...data.teachers]);
+    if (data.classes) setClasses((prev) => [...prev, ...data.classes]);
+    if (data.subjects) setSubjects((prev) => [...prev, ...data.subjects]);
+    if (data.rooms) setRooms((prev) => [...prev, ...data.rooms]);
+    if (data.extracurriculars) setExtracurriculars((prev) => [...prev, ...data.extracurriculars]);
+    if (data.loadAssignments) setLoadAssignments((prev) => [...prev, ...data.loadAssignments]);
+    if (data.extracurricularAssignments)
+      setExtracurricularAssignments((prev) => [...prev, ...data.extracurricularAssignments]);
+    if (data.curriculumPlan) setCurriculumPlan((prev) => ({ ...prev, ...data.curriculumPlan }));
+
+    if (data.weekGrid) setWeekGrid(data.weekGrid);
+    if (data.teacherAvailability) setTeacherAvailability(data.teacherAvailability);
+    if (data.scheduleLessons) setScheduleLessons(data.scheduleLessons);
+    if (data.scheduleAnchors) setScheduleAnchors(data.scheduleAnchors);
+  };
+
+  const restoreAllData = (data: Partial<AppState>) => {
+    setTeachers(data.teachers ?? []);
+    setClasses(data.classes ?? []);
+    setSubjects(data.subjects ?? []);
+    setRooms(data.rooms ?? []);
+    setExtracurriculars(data.extracurriculars ?? []);
+    setLoadAssignments(data.loadAssignments ?? []);
+    setExtracurricularAssignments(data.extracurricularAssignments ?? []);
+    setCurriculumPlan(data.curriculumPlan ?? {});
+
+    setWeekGrid(
+      data.weekGrid ?? {
+        weekType: 5,
+        includeZeroLesson: true,
+        slotsPerDay: 7,
+      }
+    );
+    setTeacherAvailability(data.teacherAvailability ?? {});
+    setScheduleLessons(data.scheduleLessons ?? []);
+    setScheduleAnchors(data.scheduleAnchors ?? []);
   };
 
   // Очистка всех данных
@@ -415,6 +442,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     deleteScheduleAnchorFor,
     deleteExtracurricularAnchorFor,
     importData,
+    restoreAllData,
     clearAllData,
   };
 
