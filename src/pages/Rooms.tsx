@@ -22,6 +22,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { useApp } from "@/context/AppContext";
 import type { Room } from "@/types";
+import { QuickBackupActions } from "@/components/importExport/QuickBackupActions";
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -90,14 +91,16 @@ export default function Rooms() {
           <h1 className="text-3xl font-bold">Кабинеты</h1>
           <p className="text-muted-foreground">Справочник кабинетов: номер/название, предметы, этаж</p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={() => handleOpenDialog()}>
-              <Plus className="mr-2 h-4 w-4" />
-              Добавить кабинет
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-2xl">
+        <div className="flex flex-wrap items-center gap-2">
+          <QuickBackupActions />
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <DialogTrigger asChild>
+              <Button onClick={() => handleOpenDialog()}>
+                <Plus className="mr-2 h-4 w-4" />
+                Добавить кабинет
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>{editingRoom ? "Редактировать кабинет" : "Новый кабинет"}</DialogTitle>
             </DialogHeader>
@@ -188,8 +191,9 @@ export default function Rooms() {
                 {editingRoom ? "Сохранить" : "Добавить"}
               </Button>
             </div>
-          </DialogContent>
-        </Dialog>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       <div className="flex items-center gap-4">
