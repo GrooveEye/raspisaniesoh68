@@ -49,7 +49,7 @@
 
     let score = 0;
     score -= windows * 100; // главное: не делать окна
-    if (adjacent) score += 15;
+  if (adjacent) score += 20;
     // Небольшой бонус за более плотный диапазон (приближаем к «целому дню»)
     score -= (max - min) * 2;
     // Правило: 0-й урок — в последнюю очередь
@@ -171,6 +171,61 @@
  
    // Индекс учителей
    const teacherMap = new Map(teachers.map((t) => [t.id, t]));
+
+  const getRoomCandidates = (params: {
+    teacherId: string;
+    subjectId: string;
+  }): string[] => {
+    const teacher = teacherMap.get(params.teacherId);
+    if (!teacher) return [];
+
+    // Если кабинет учителя фиксированный — только он
+    const lockedRoom = teacher.primaryRoom && !teacher.isUniversalRoom ? teacher.primaryRoom : "";
+    if (lockedRoom) return [lockedRoom];
+
+    // Для «псевдо‑предметов» (внеурочка) профильные кабинеты не подбираем
+    const subjectId = params.subjectId;
+    const isExtr = isExtrSubject(subjectId);
+
+    const suitable: string[] = [];
+
+    if (!isExtr) {
+      // 1) Профильные кабинеты под предмет
+      for (const r of rooms) {
+        if (r.isUniversal) continue;
+        if ((r.subjectIds || []).includes(subjectId)) suitable.push(r.name);
+      }
+    }
+
+    // 2) Универсальные кабинеты
+    for (const r of rooms) {
+      if (r.isUniversal) suitable.push(r.name);
+    }
+
+    // Удаляем дубликаты
+    return Array.from(new Set(suitable));
+  };
+
+  const pickRoomForSlot = (params: {
+    teacherId: string;
+    subjectId: string;
+    day: string;
+    slot: number;
+  }): { room: string; ok: boolean } => {
+    const { teacherId, subjectId, day, slot } = params;
+    const key = `${day}__${slot}`;
+    const occupied = roomOccupied.get(key) || new Set<string>();
+    const candidates = getRoomCandidates({ teacherId, subjectId });
+
+    // Если есть кандидаты — берём первый свободный
+    for (const room of candidates) {
+      if (!room) continue;
+      if (!occupied.has(room.toLowerCase())) return { room, ok: true };
+    }
+
+    // Если кабинетов нет/все заняты — разрешаем пусто (как fallback)
+    return { room: "", ok: true };
+  };
  
     // Индекс занятости: день__слот -> Set<teacherId>
    const teacherOccupied = new Map<string, Set<string>>();
@@ -212,7 +267,7 @@
         addTeacherDaySlot(lesson.teacherId, lesson.day, lesson.slot);
       };
 
-      const canPlaceLesson = (lesson: ScheduleLesson, day: string, slot: number, room: string) => {
+  const canPlaceLesson = (lesson: ScheduleLesson, day: string, slot: number, room: string) => {
         // Класс свободен
         const classHasLesson = lessons.some((l) => l.classId === lesson.classId && l.day === day && l.slot === slot);
         if (classHasLesson) return false;
@@ -234,12 +289,58 @@
         return true;
       };
 
+  const scoreForClassPlacement = (params: {
+    teacherId: string;
+    classId: string;
+    subjectId: string;
+    day: string;
+    slot: number;
+  }) => {
+    const { teacherId, classId, subjectId, day, slot } = params;
+
+    // База: окна/плотность по учителю в этот день
+    const tdKey = `${teacherId}__${day}`;
+    const currentTeacherSlots = teacherDaySlots.get(tdKey) || [];
+    let score = scoreCandidate({
+      teacherDaySlots: currentTeacherSlots,
+      candidateSlot: slot,
+      slot0Preferred: isExtrSubject(subjectId),
+    });
+
+    // Мягкое правило: >4 уроков этого учителя в одном классе — крайне нежелательно
+    const teacherInClassCount = lessons.filter((l) => l.classId === classId && l.teacherId === teacherId).length;
+    if (teacherInClassCount >= 4) score -= 220;
+
+    // Пары одного предмета: если в этот день уже есть 1 урок этого предмета у класса — лучше ставить рядом
+    const sameSubjectSlotsToday = lessons
+      .filter((l) => l.classId === classId && l.day === day && l.subjectId === subjectId)
+      .map((l) => l.slot);
+    if (sameSubjectSlotsToday.length === 1) {
+      const baseSlot = sameSubjectSlotsToday[0];
+      if (Math.abs(baseSlot - slot) === 1) score += 45;
+      else score -= 25;
+    }
+
+    // Штраф за соседство разных предметов одного и того же учителя в одном классе
+    const hasAdjacentOtherSubjectSameTeacher = lessons.some(
+      (l) =>
+        l.classId === classId &&
+        l.teacherId === teacherId &&
+        l.day === day &&
+        Math.abs(l.slot - slot) === 1 &&
+        l.subjectId !== subjectId
+    );
+    if (hasAdjacentOtherSubjectSameTeacher) score -= 35;
+
+    return score;
+  };
+
       const relocateLesson = (lessonToMove: ScheduleLesson) => {
         // Закреплённые уроки не двигаем
         if (isLessonAnchored(lessonToMove)) return false;
 
-        const teacher = teacherMap.get(lessonToMove.teacherId);
-        const room = teacher?.primaryRoom || "";
+    const teacher = teacherMap.get(lessonToMove.teacherId);
+    const lockedRoom = teacher?.primaryRoom && !teacher?.isUniversalRoom ? teacher.primaryRoom : "";
 
         // Убираем текущую занятость на время поиска нового места
         removeOccupancy(lessonToMove);
@@ -251,7 +352,19 @@
           const slotOrder = orderSlotsForPlacement(slotsForDay(day, { includeMinusOne: false }));
 
           for (const slot of slotOrder) {
-            if (!canPlaceLesson(lessonToMove, day, slot, room)) continue;
+        // Подбираем кабинет (или фиксированный)
+        let room = lockedRoom;
+        if (!room) {
+          const picked = pickRoomForSlot({
+            teacherId: lessonToMove.teacherId,
+            subjectId: lessonToMove.subjectId,
+            day,
+            slot,
+          });
+          room = picked.room;
+        }
+
+        if (!canPlaceLesson(lessonToMove, day, slot, room)) continue;
 
             // Мягкое правило: не более 2 уроков одного предмета в день
             const sameSubjectCount = lessons.filter(
@@ -259,13 +372,13 @@
             ).length;
             const subjectOk = sameSubjectCount < 2;
 
-            const tdKey = `${lessonToMove.teacherId}__${day}`;
-            const currentTeacherSlots = teacherDaySlots.get(tdKey) || [];
-            let score = scoreCandidate({
-              teacherDaySlots: currentTeacherSlots,
-              candidateSlot: slot,
-              slot0Preferred: isExtrSubject(lessonToMove.subjectId),
-            });
+        let score = scoreForClassPlacement({
+          teacherId: lessonToMove.teacherId,
+          classId: lessonToMove.classId,
+          subjectId: lessonToMove.subjectId,
+          day,
+          slot,
+        });
             if (!subjectOk) score -= 60;
 
             candidates.push({ day, slot, score });
@@ -284,7 +397,19 @@
         // Перемещаем
         lessonToMove.day = best.day;
         lessonToMove.slot = best.slot;
-        lessonToMove.room = room || undefined;
+    {
+      let nextRoom = lockedRoom;
+      if (!nextRoom) {
+        nextRoom =
+          pickRoomForSlot({
+            teacherId: lessonToMove.teacherId,
+            subjectId: lessonToMove.subjectId,
+            day: best.day,
+            slot: best.slot,
+          }).room || "";
+      }
+      lessonToMove.room = nextRoom || undefined;
+    }
         addOccupancy(lessonToMove);
         return true;
       };
@@ -321,8 +446,8 @@
 
       const forcedAnchor = gAnchors[0];
 
-      const teacher = teacherMap.get(g.teacherId);
-      const room = teacher?.primaryRoom || "";
+    const teacher = teacherMap.get(g.teacherId);
+    const lockedRoom = teacher?.primaryRoom && !teacher?.isUniversalRoom ? teacher.primaryRoom : "";
 
       let placed = 0;
       for (const day of days) {
@@ -353,19 +478,21 @@
           const teachersInSlot = teacherOccupied.get(key) || new Set();
           if (teachersInSlot.has(g.teacherId)) continue;
 
-          // конфликт кабинета (если кабинет фиксированный)
-          if (room) {
-            const roomsInSlot = roomOccupied.get(key) || new Set();
-            if (roomsInSlot.has(room.toLowerCase())) continue;
-          }
+        // кабинет (фиксированный или подбор)
+        let room = lockedRoom;
+        if (!room) {
+          room = pickRoomForSlot({ teacherId: g.teacherId, subjectId: g.subjectId, day, slot }).room;
+        }
+        if (room) {
+          const roomsInSlot = roomOccupied.get(key) || new Set();
+          if (roomsInSlot.has(room.toLowerCase())) continue;
+        }
 
-          const tdKey = `${g.teacherId}__${day}`;
-          const currentTeacherSlots = teacherDaySlots.get(tdKey) || [];
-          const score = scoreCandidate({
-            teacherDaySlots: currentTeacherSlots,
-            candidateSlot: slot,
-            slot0Preferred: isExtrSubject(g.subjectId),
-          });
+        const score = scoreCandidate({
+          teacherDaySlots: teacherDaySlots.get(`${g.teacherId}__${day}`) || [],
+          candidateSlot: slot,
+          slot0Preferred: isExtrSubject(g.subjectId),
+        });
           candidates.push({ slot, score });
         }
 
@@ -388,10 +515,12 @@
           const teachersInSlot = teacherOccupied.get(key) || new Set();
           if (teachersInSlot.has(g.teacherId)) continue;
 
-          if (room) {
-            const roomsInSlot = roomOccupied.get(key) || new Set();
-            if (roomsInSlot.has(room.toLowerCase())) continue;
-          }
+        let room = lockedRoom;
+        if (!room) room = pickRoomForSlot({ teacherId: g.teacherId, subjectId: g.subjectId, day, slot }).room;
+        if (room) {
+          const roomsInSlot = roomOccupied.get(key) || new Set();
+          if (roomsInSlot.has(room.toLowerCase())) continue;
+        }
 
           const sharedGroupId = `${g.id}__${placed + 1}`;
           for (const classId of g.classIds) {
@@ -402,16 +531,14 @@
               slot,
               subjectId: g.subjectId,
               teacherId: g.teacherId,
-              room: room || undefined,
+            room: room || undefined,
               sharedGroupId,
             });
           }
 
-          teacherOccupied.set(key, teachersInSlot.add(g.teacherId));
+        teacherOccupied.set(key, teachersInSlot.add(g.teacherId));
           addTeacherDaySlot(g.teacherId, day, slot);
-          if (room) {
-            roomOccupied.set(key, (roomOccupied.get(key) || new Set()).add(room.toLowerCase()));
-          }
+        if (room) roomOccupied.set(key, (roomOccupied.get(key) || new Set()).add(room.toLowerCase()));
 
           placed++;
         }
@@ -461,8 +588,13 @@
           }
         }
  
-       const teacher = teacherMap.get(a.teacherId);
-       const room = teacher?.primaryRoom || "";
+      // Подбираем кабинет (закрепления тоже должны получать кабинет)
+      const teacher = teacherMap.get(a.teacherId);
+      const lockedRoom = teacher?.primaryRoom && !teacher?.isUniversalRoom ? teacher.primaryRoom : "";
+      let room = lockedRoom;
+      if (!room) {
+        room = pickRoomForSlot({ teacherId: a.teacherId, subjectId: a.subjectId, day: anchor.day, slot: anchor.slot }).room;
+      }
  
        // Проверяем доступность учителя
        const available = teacherAvailability[a.teacherId]?.[anchor.day]?.[anchor.slot] ?? true;
@@ -483,6 +615,15 @@
          continue;
        }
  
+      // Проверяем конфликт кабинета (если подобран)
+      if (room) {
+        const roomsInSlot = roomOccupied.get(key) || new Set();
+        if (roomsInSlot.has(room.toLowerCase())) {
+          conflicts.push(`${cls.grade}${cls.letter}: ${anchor.day} ${anchor.slot}-й — кабинет занят (закрепление)`);
+          continue;
+        }
+      }
+
        // Добавляем урок
        const lesson: ScheduleLesson = {
          id: crypto?.randomUUID?.() ?? String(Date.now() + Math.random()),
@@ -528,7 +669,7 @@
        if (needed <= 0) continue;
  
        const teacher = teacherMap.get(a.teacherId);
-       const room = teacher?.primaryRoom || "";
+      const lockedRoom = teacher?.primaryRoom && !teacher?.isUniversalRoom ? teacher.primaryRoom : "";
  
         // Ищем свободные слоты для этого класса
        let placed = 0;
@@ -565,12 +706,20 @@
             const teachersInSlot = teacherOccupied.get(key) || new Set();
             if (teachersInSlot.has(a.teacherId)) continue;
 
-            const tdKey = `${a.teacherId}__${day}`;
-            const currentTeacherSlots = teacherDaySlots.get(tdKey) || [];
-            let score = scoreCandidate({
-              teacherDaySlots: currentTeacherSlots,
-              candidateSlot: slot,
-              slot0Preferred: isExtrSubject(a.subjectId),
+            // Подбираем кабинет и проверяем конфликт кабинета
+            let room = lockedRoom;
+            if (!room) room = pickRoomForSlot({ teacherId: a.teacherId, subjectId: a.subjectId, day, slot }).room;
+            if (room) {
+              const roomsInSlot = roomOccupied.get(key) || new Set();
+              if (roomsInSlot.has(room.toLowerCase())) continue;
+            }
+
+            let score = scoreForClassPlacement({
+              teacherId: a.teacherId,
+              classId: cls.id,
+              subjectId: a.subjectId,
+              day,
+              slot,
             });
             if (!subjectOk) score -= 60;
 
@@ -593,6 +742,13 @@
             const key = `${day}__${slot}`;
             const teachersInSlot = teacherOccupied.get(key) || new Set();
             if (teachersInSlot.has(a.teacherId)) continue;
+
+            let room = lockedRoom;
+            if (!room) room = pickRoomForSlot({ teacherId: a.teacherId, subjectId: a.subjectId, day, slot }).room;
+            if (room) {
+              const roomsInSlot = roomOccupied.get(key) || new Set();
+              if (roomsInSlot.has(room.toLowerCase())) continue;
+            }
 
             const lesson: ScheduleLesson = {
               id: crypto?.randomUUID?.() ?? String(Date.now() + Math.random()),
