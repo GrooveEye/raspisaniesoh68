@@ -36,7 +36,8 @@ import { useApp } from "@/context/AppContext";
 import { toast } from "sonner";
 import type { Extracurricular, ExtracurricularAssignment } from "@/types";
 import { AnchorsManagerDialog } from "@/components/schedule/AnchorsManagerDialog";
-import { QuickBackupActions } from "@/components/importExport/QuickBackupActions";
+import { SectionImportExportActions } from "@/components/importExport/SectionImportExportActions";
+import { exportExtracurricularsToExcel, parseExtracurricularsFromData } from "@/lib/exportUtils";
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -69,7 +70,8 @@ export default function ExtracurricularPage() {
     addExtracurricularAssignment,
     deleteExtracurricularAssignment,
     teachers,
-    classes
+    classes,
+    setExtracurriculars,
   } = useApp();
   
   const [searchQuery, setSearchQuery] = useState("");
@@ -271,7 +273,28 @@ export default function ExtracurricularPage() {
           <p className="text-muted-foreground">Кружки, секции и факультативы</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <QuickBackupActions />
+          <SectionImportExportActions<Extracurricular>
+            sectionLabel="Внеурочная деятельность"
+            exportExcel={() => exportExtracurricularsToExcel(extracurriculars)}
+            exportJsonData={() => extracurriculars}
+            importFromTable={(table) =>
+              parseExtracurricularsFromData(table).map((x) => ({ ...x, id: crypto.randomUUID() }))
+            }
+            importFromJson={(arr) =>
+              (arr as any[]).map((e) => ({
+                id: (e?.id as string) || crypto.randomUUID(),
+                name: String(e?.name ?? "").trim(),
+                direction: (e?.direction as Extracurricular["direction"]) ?? "общекультурное",
+                hoursPerWeek: Number(e?.hoursPerWeek ?? 1) || 1,
+                targetGrades: Array.isArray(e?.targetGrades)
+                  ? e.targetGrades.map((n: any) => Number(n)).filter((n: number) => Number.isFinite(n))
+                  : [],
+                maxStudents: e?.maxStudents === undefined || e?.maxStudents === null || e?.maxStudents === "" ? undefined : Number(e.maxStudents),
+                isClassTeacherLed: Boolean(e?.isClassTeacherLed),
+              }))
+            }
+            onReplace={(items) => setExtracurriculars(items)}
+          />
           <Dialog open={isAssignDialogOpen} onOpenChange={setIsAssignDialogOpen}>
             <DialogTrigger asChild>
               <Button variant="outline" onClick={() => handleOpenAssignDialog()}>

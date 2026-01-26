@@ -37,26 +37,31 @@ interface AppContextType {
   addTeacher: (teacher: Teacher) => void;
   updateTeacher: (id: string, teacher: Partial<Teacher>) => void;
   deleteTeacher: (id: string) => void;
+  setTeachers: (teachers: Teacher[]) => void;
   
   // Методы для классов
   addClass: (schoolClass: SchoolClass) => void;
   updateClass: (id: string, schoolClass: Partial<SchoolClass>) => void;
   deleteClass: (id: string) => void;
+  setClasses: (classes: SchoolClass[]) => void;
   
   // Методы для предметов
   addSubject: (subject: Subject) => void;
   updateSubject: (id: string, subject: Partial<Subject>) => void;
   deleteSubject: (id: string) => void;
+  setSubjects: (subjects: Subject[]) => void;
 
   // Методы для кабинетов
   addRoom: (room: Room) => void;
   updateRoom: (id: string, room: Partial<Room>) => void;
   deleteRoom: (id: string) => void;
+  setRooms: (rooms: Room[]) => void;
   
   // Методы для внеурочной деятельности
   addExtracurricular: (extracurricular: Extracurricular) => void;
   updateExtracurricular: (id: string, extracurricular: Partial<Extracurricular>) => void;
   deleteExtracurricular: (id: string) => void;
+  setExtracurriculars: (items: Extracurricular[]) => void;
   
   // Методы для распределения нагрузки
   addLoadAssignment: (assignment: LoadAssignment) => void;
@@ -407,18 +412,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
     addTeacher,
     updateTeacher,
     deleteTeacher,
+    setTeachers,
     addClass,
     updateClass,
     deleteClass,
+    setClasses,
     addSubject,
     updateSubject,
     deleteSubject,
+    setSubjects,
     addRoom,
     updateRoom,
     deleteRoom,
+    setRooms,
     addExtracurricular,
     updateExtracurricular,
     deleteExtracurricular,
+    setExtracurriculars,
     addLoadAssignment,
     updateLoadAssignment,
     deleteLoadAssignment,

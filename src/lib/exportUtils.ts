@@ -168,6 +168,28 @@ export function exportExtracurricularsToExcel(extracurriculars: Extracurricular[
   XLSX.writeFile(wb, `extracurriculars-${new Date().toISOString().split('T')[0]}.xlsx`);
 }
 
+export function exportRoomsToExcel(rooms: Room[], subjects: Subject[]) {
+  const subjectById = new Map(subjects.map((s) => [s.id, s.name] as const));
+  const data = rooms
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name, "ru"))
+    .map((r) => ({
+      'Название': r.name,
+      'Этаж': r.floor ?? '',
+      'Универсальный': r.isUniversal ? 'Да' : 'Нет',
+      'Предметы': (r.subjectIds ?? [])
+        .map((id) => subjectById.get(id) ?? id)
+        .filter(Boolean)
+        .join(', '),
+    }));
+
+  const ws = XLSX.utils.json_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Кабинеты');
+  ws['!cols'] = [{ wch: 18 }, { wch: 8 }, { wch: 14 }, { wch: 50 }];
+  XLSX.writeFile(wb, `rooms-${new Date().toISOString().split('T')[0]}.xlsx`);
+}
+
 // Экспорт распределения нагрузки в формате как на примере
 
 type DistributionMode = "teacher" | "class" | "subject";
@@ -1436,6 +1458,51 @@ export function parseTeachersFromData(data: any[][]): Omit<Teacher, 'id'>[] {
   }
   
   return teachers;
+}
+
+export function parseRoomsFromData(data: any[][], subjects: Subject[]): Omit<Room, 'id'>[] {
+  const rooms: Omit<Room, 'id'>[] = [];
+  const headers = data[0]?.map((h) => String(h).toLowerCase().trim()) || [];
+
+  const nameIndex = headers.findIndex((h) => h.includes('назван') || h.includes('кабин') || h === 'name');
+  const floorIndex = headers.findIndex((h) => h.includes('этаж') || h.includes('floor'));
+  const universalIndex = headers.findIndex((h) => h.includes('универс'));
+  const subjectsIndex = headers.findIndex((h) => h.includes('предмет'));
+
+  const normalize = (s: string) => s.trim().toLowerCase();
+  const subjectByName = new Map(subjects.map((s) => [normalize(s.name), s.id] as const));
+
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    if (!row || row.length === 0) continue;
+
+    const name = (row[nameIndex >= 0 ? nameIndex : 0] ?? '').toString().trim();
+    if (!name) continue;
+
+    const floorRaw = row[floorIndex >= 0 ? floorIndex : -1];
+    const floor = floorRaw === undefined || floorRaw === null || String(floorRaw).trim() === '' ? undefined : Number(floorRaw);
+
+    const unRaw = (row[universalIndex >= 0 ? universalIndex : -1] ?? '').toString().toLowerCase().trim();
+    const isUniversal = unRaw === 'да' || unRaw === 'true' || unRaw === '1';
+
+    const subjectsRaw = (row[subjectsIndex >= 0 ? subjectsIndex : -1] ?? '').toString();
+    const subjectIds = subjectsRaw
+      ? subjectsRaw
+          .split(/[,;]/)
+          .map((x) => normalize(x))
+          .map((n) => subjectByName.get(n))
+          .filter((x): x is string => !!x)
+      : [];
+
+    rooms.push({
+      name,
+      floor: Number.isFinite(floor as number) ? floor : undefined,
+      isUniversal,
+      subjectIds: Array.from(new Set(subjectIds)),
+    });
+  }
+
+  return rooms;
 }
 
 // Парсинг классов из Excel/CSV
