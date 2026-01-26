@@ -95,13 +95,27 @@ function extractSubjectIdFromConflict(message: string) {
      return weekGrid.weekType === 6 ? [...base, "Суббота"] : base;
    }, [weekGrid.weekType]);
  
-   const slots = useMemo(() => {
-     const start = weekGrid.includeZeroLesson ? 0 : 1;
-     const end = weekGrid.slotsPerDay;
-     const arr: number[] = [];
-     for (let s = start; s <= end; s++) arr.push(s);
-     return arr;
-   }, [weekGrid.includeZeroLesson, weekGrid.slotsPerDay]);
+  const slotsByDay = useMemo(() => {
+    const includeMinus = weekGrid.includeMinusOneLessonDays ?? {};
+    const start = weekGrid.includeZeroLesson ? 0 : 1;
+    const end = weekGrid.slotsPerDay;
+
+    const base: number[] = [];
+    for (let s = start; s <= end; s++) base.push(s);
+
+    const by: Record<string, number[]> = {};
+    for (const day of days) {
+      by[day] = includeMinus[day] ? [-1, ...base] : [...base];
+    }
+    return by;
+  }, [days, weekGrid.includeZeroLesson, weekGrid.slotsPerDay, weekGrid.includeMinusOneLessonDays]);
+
+  // Для матрицы «Доступность» нужен объединённый список слотов.
+  const availabilitySlots = useMemo(() => {
+    const all = new Set<number>();
+    for (const day of days) (slotsByDay[day] || []).forEach((s) => all.add(s));
+    return [...all].sort((a, b) => a - b);
+  }, [days, slotsByDay]);
  
    const sortedClasses = useMemo(() => {
      return classes
@@ -503,7 +517,7 @@ function extractSubjectIdFromConflict(message: string) {
            ) : (
              <ScheduleGridByDays
                days={days}
-               slots={slots}
+                slotsByDay={slotsByDay}
                classes={filteredClasses}
                lessons={scheduleLessons}
                 subjects={combinedSubjects}
@@ -525,7 +539,6 @@ function extractSubjectIdFromConflict(message: string) {
            ) : (
              <ScheduleGridBySlots
                days={days}
-               slots={slots}
                classes={filteredClasses}
                lessons={scheduleLessons}
                 subjects={combinedSubjects}
@@ -590,7 +603,7 @@ function extractSubjectIdFromConflict(message: string) {
                             <div key={lessonId} className="rounded-md border p-3 space-y-2">
                               <div className="flex items-center justify-between">
                                 <div className="font-medium">
-                                  {cls ? `${cls.grade}${cls.letter}` : "?"} — {lesson.day}, {lesson.slot === 0 ? "0-й" : `${lesson.slot}-й`}
+                                  {cls ? `${cls.grade}${cls.letter}` : "?"} — {lesson.day}, {lesson.slot === -1 ? "-1" : lesson.slot === 0 ? "0-й" : `${lesson.slot}-й`}
                                 </div>
                                 <Button
                                   variant="secondary"
@@ -667,26 +680,28 @@ function extractSubjectIdFromConflict(message: string) {
                        </div>
                      ))}
  
-                     {slots.map((slot) => {
+                      {availabilitySlots.map((slot) => {
                        return (
                          <div key={`av-row-${slot}`} className="contents">
                            <div key={`slot-av-${slot}`} className="border-b p-3 text-sm text-muted-foreground">
-                             {slot === 0 ? "0-й" : `${slot}-й`}
+                              {slot === -1 ? "-1" : slot === 0 ? "0-й" : `${slot}-й`}
                            </div>
                            {days.map((day) => {
+                              const slotEnabledInDay = (slotsByDay[day] || []).includes(slot);
                              const available =
                                teacherAvailability[availabilityTeacherId]?.[day]?.[slot] ?? true;
                              return (
                                <div key={`${day}-${slot}`} className="border-b p-3">
                                  <div className="flex items-center gap-2">
                                    <Switch
-                                     checked={available}
+                                      checked={slotEnabledInDay ? available : false}
+                                      disabled={!slotEnabledInDay}
                                      onCheckedChange={(v) =>
                                        setTeacherAvailabilityCell(availabilityTeacherId, day, slot, v)
                                      }
                                    />
                                    <span className="text-sm text-muted-foreground">
-                                     {available ? "Можно" : "Нельзя"}
+                                      {!slotEnabledInDay ? "—" : available ? "Можно" : "Нельзя"}
                                    </span>
                                  </div>
                                </div>
@@ -724,9 +739,9 @@ function extractSubjectIdFromConflict(message: string) {
                        <div key={a.id} className="flex items-center justify-between rounded-md border p-3">
                          <div className="min-w-0">
                            <div className="font-medium truncate">{label}</div>
-                           <div className="text-sm text-muted-foreground">
-                             {a.day}, {a.slot === 0 ? "0-й" : `${a.slot}-й`}
-                           </div>
+                            <div className="text-sm text-muted-foreground">
+                              {a.day}, {a.slot === -1 ? "-1" : a.slot === 0 ? "0-й" : `${a.slot}-й`}
+                            </div>
                          </div>
                          <div className="flex gap-2">
                            <Button

@@ -4,7 +4,6 @@ import { ScheduleIssue } from "./scheduleUtils";
 
 interface ScheduleGridBySlotsProps {
   days: string[];
-  slots: number[];
   classes: SchoolClass[];
   lessons: ScheduleLesson[];
   subjects: Subject[];
@@ -14,7 +13,7 @@ interface ScheduleGridBySlotsProps {
 }
 
 export function ScheduleGridBySlots(props: ScheduleGridBySlotsProps) {
-  const { days, slots, classes, lessons, subjects, teachers, issuesByLessonId, onCellClick } = props;
+  const { days, classes, lessons, subjects, teachers, issuesByLessonId, onCellClick } = props;
 
   const classLabel = (grade: number, letter: string) => `${grade}${letter}`;
 
@@ -67,7 +66,7 @@ export function ScheduleGridBySlots(props: ScheduleGridBySlotsProps) {
                           >
                             <div className="flex items-baseline gap-2">
                               <span className="text-xs text-muted-foreground font-medium min-w-[24px]">
-                                {lesson.slot === 0 ? "0" : lesson.slot}
+                                {lesson.slot === -1 ? "-1" : lesson.slot === 0 ? "0" : lesson.slot}
                               </span>
                               <div className="flex-1 min-w-0 space-y-0.5">
                                 <div className="font-medium text-sm leading-tight truncate">

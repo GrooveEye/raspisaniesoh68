@@ -87,6 +87,8 @@ export type WeekType = 5 | 6;
 export interface WeekGrid {
   weekType: WeekType; // 5 или 6 дней
   includeZeroLesson: boolean; // показывать 0-й урок
+  /** Показывать и использовать -1 урок только в выбранные дни недели */
+  includeMinusOneLessonDays?: Record<string, boolean>;
   slotsPerDay: number; // количество уроков в день (без учёта 0-го)
 }
 

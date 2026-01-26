@@ -181,12 +181,19 @@ export function ScheduleEditorDialog(props: {
     toast({ title: "Урок удалён" });
   };
 
+  const slotLabel = (slot?: number) => {
+    if (slot === -1) return "-1";
+    if (slot === 0) return "0-й";
+    if (typeof slot === "number") return `${slot}-й`;
+    return "";
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
-            Урок: {className} — {defaults?.day}, {defaults?.slot}-й
+            Урок: {className} — {defaults?.day}, {slotLabel(defaults?.slot)}
           </DialogTitle>
           <DialogDescription>
             Выбор предмета/учителя берётся из результатов распределения нагрузки.
@@ -264,7 +271,7 @@ export function ScheduleEditorDialog(props: {
                   <div className="font-medium">Закрепление предмета</div>
                   <div className="text-sm text-muted-foreground">
                     {anchorForSubject
-                      ? `Сейчас закреплено: ${anchorForSubject.day}, ${anchorForSubject.slot}-й`
+                      ? `Сейчас закреплено: ${anchorForSubject.day}, ${slotLabel(anchorForSubject.slot)}`
                       : "Не закреплён"}
                   </div>
                 </div>

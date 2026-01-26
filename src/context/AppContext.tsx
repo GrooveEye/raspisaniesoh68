@@ -126,6 +126,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [weekGrid, setWeekGrid] = useLocalStorage<WeekGrid>('school-plan-week-grid', {
     weekType: 5,
     includeZeroLesson: true,
+    includeMinusOneLessonDays: {},
     slotsPerDay: 7,
   });
   const [teacherAvailability, setTeacherAvailability] = useLocalStorage<TeacherAvailability>(
@@ -368,6 +369,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       data.weekGrid ?? {
         weekType: 5,
         includeZeroLesson: true,
+        includeMinusOneLessonDays: {},
         slotsPerDay: 7,
       }
     );
@@ -393,6 +395,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setWeekGrid({
       weekType: 5,
       includeZeroLesson: true,
+      includeMinusOneLessonDays: {},
       slotsPerDay: 7,
     });
   };

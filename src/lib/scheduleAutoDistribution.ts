@@ -60,13 +60,18 @@
   // Порядок размещения слотов:
   // 1) 1..6
   // 2) 7..N
-  // 3) 0 — всегда в конце
+  // 3) 0 — в конце
+  // 4) -1 — самый последний (используем только для закреплений)
   function orderSlotsForPlacement(allSlots: number[]) {
     const hasZero = allSlots.includes(0);
-    const nonZero = allSlots.filter((s) => s !== 0);
-    const first = nonZero.filter((s) => s >= 1 && s <= 6).sort((a, b) => a - b);
-    const rest = nonZero.filter((s) => s < 1 || s > 6).sort((a, b) => a - b);
-    return hasZero ? [...first, ...rest, 0] : [...first, ...rest];
+    const hasMinusOne = allSlots.includes(-1);
+    const nonSpecial = allSlots.filter((s) => s !== 0 && s !== -1);
+    const first = nonSpecial.filter((s) => s >= 1 && s <= 6).sort((a, b) => a - b);
+    const rest = nonSpecial.filter((s) => s < 1 || s > 6).sort((a, b) => a - b);
+    const tail: number[] = [];
+    if (hasZero) tail.push(0);
+    if (hasMinusOne) tail.push(-1);
+    return [...first, ...rest, ...tail];
   }
 
   function removeTeacherDaySlot(params: { map: Map<string, number[]>; teacherId: string; day: string; slot: number }) {
@@ -137,11 +142,24 @@
        ? ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"]
        : ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница"];
  
-   // Слоты
-   const slotsStart = weekGrid.includeZeroLesson ? 0 : 1;
-   const slotsEnd = weekGrid.slotsPerDay;
-   const slots: number[] = [];
-   for (let s = slotsStart; s <= slotsEnd; s++) slots.push(s);
+    const includeMinusByDay = weekGrid.includeMinusOneLessonDays ?? {};
+
+    // Базовые слоты (без -1): 0..N или 1..N
+    const slotsStart = weekGrid.includeZeroLesson ? 0 : 1;
+    const slotsEnd = weekGrid.slotsPerDay;
+    const baseSlots: number[] = [];
+    for (let s = slotsStart; s <= slotsEnd; s++) baseSlots.push(s);
+
+    const slotsForDay = (day: string, opts?: { includeMinusOne?: boolean }) => {
+      const includeMinus = Boolean(opts?.includeMinusOne) && Boolean(includeMinusByDay[day]);
+      return includeMinus ? [-1, ...baseSlots] : [...baseSlots];
+    };
+
+    const isSlotAllowed = (day: string, slot: number) => {
+      if (slot === -1) return Boolean(includeMinusByDay[day]);
+      if (slot === 0) return Boolean(weekGrid.includeZeroLesson);
+      return slot >= 1 && slot <= slotsEnd;
+    };
  
     // Индекс закреплений: classId__subjectId -> anchor
     const anchorIndex = new Map<string, ScheduleAnchor>();
@@ -229,7 +247,8 @@
         const candidates: Array<{ day: string; slot: number; score: number }> = [];
 
         for (const day of days) {
-          const slotOrder = orderSlotsForPlacement(slots);
+          // -1 слот используем только для закреплений, поэтому при «перестановке» его не рассматриваем
+          const slotOrder = orderSlotsForPlacement(slotsForDay(day, { includeMinusOne: false }));
 
           for (const slot of slotOrder) {
             if (!canPlaceLesson(lessonToMove, day, slot, room)) continue;
@@ -310,7 +329,9 @@
         if (placed >= needed) break;
         if (forcedAnchor && forcedAnchor.day !== day) continue;
 
-        const slotOrder = orderSlotsForPlacement(slots);
+        const slotOrder = orderSlotsForPlacement(
+          slotsForDay(day, { includeMinusOne: forcedAnchor?.slot === -1 })
+        );
 
         const candidates: { slot: number; score: number }[] = [];
         for (const slot of slotOrder) {
@@ -417,6 +438,13 @@
      for (const a of assignments) {
        const anchor = anchorIndex.get(`${cls.id}__${a.subjectId}`);
        if (!anchor) continue;
+
+        if (!isSlotAllowed(anchor.day, anchor.slot)) {
+          conflicts.push(
+            `${cls.grade}${cls.letter}: ${anchor.day} ${anchor.slot} — слот закрепления недоступен в сетке недели`
+          );
+          continue;
+        }
  
        // Проверяем, есть ли уже урок в этом слоте
        const existing = lessons.find(
@@ -510,7 +538,8 @@
           // Собираем кандидаты по дню и выбираем лучший по эвристике
           const candidates: { slot: number; score: number }[] = [];
 
-          const slotOrder = orderSlotsForPlacement(slots);
+          // -1 слот используем только для закреплений
+          const slotOrder = orderSlotsForPlacement(slotsForDay(day, { includeMinusOne: false }));
 
           for (const slot of slotOrder) {
             if (placed >= needed) break;
