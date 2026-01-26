@@ -18,9 +18,13 @@
        ? ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"]
        : ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница"];
  
+  const includeMinusByDay = weekGrid.includeMinusOneLessonDays ?? {};
+  const hasMinusOne = days.some((d) => Boolean(includeMinusByDay[d]));
+
    const slotsStart = weekGrid.includeZeroLesson ? 0 : 1;
    const slotsEnd = weekGrid.slotsPerDay;
    const slots: number[] = [];
+  if (hasMinusOne) slots.push(-1);
    for (let s = slotsStart; s <= slotsEnd; s++) slots.push(s);
  
    const sortedClasses = classes
@@ -44,8 +48,11 @@
    sheet1Data.push(header1);
  
    for (const day of days) {
-     for (const slot of slots) {
-       const row: any[] = [day, slot === 0 ? "0-й" : `${slot}-й`];
+      for (const slot of slots) {
+        // -1 отображаем только в днях, где он включён
+        if (slot === -1 && !includeMinusByDay[day]) continue;
+
+        const row: any[] = [day, slot === -1 ? "-1" : slot === 0 ? "0-й" : `${slot}-й`];
        for (const cls of sortedClasses) {
          const l = lessonIndex.get(`${cls.id}__${day}__${slot}`);
          if (l) {
@@ -88,10 +95,14 @@
    const header2 = ["Класс", "Урок", ...days];
    sheet2Data.push(header2);
  
-   for (const cls of sortedClasses) {
-     for (const slot of slots) {
-       const row: any[] = [`${cls.grade}${cls.letter}`, slot === 0 ? "0-й" : `${slot}-й`];
+    for (const cls of sortedClasses) {
+      for (const slot of slots) {
+        const row: any[] = [`${cls.grade}${cls.letter}`, slot === -1 ? "-1" : slot === 0 ? "0-й" : `${slot}-й`];
        for (const day of days) {
+          if (slot === -1 && !includeMinusByDay[day]) {
+            row.push("");
+            continue;
+          }
          const l = lessonIndex.get(`${cls.id}__${day}__${slot}`);
          if (l) {
            const subj = subjectMap.get(l.subjectId) || "";

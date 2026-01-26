@@ -57,6 +57,11 @@ export function AnchorsManagerDialog(props: {
     return arr;
   }, [weekGrid.includeZeroLesson, weekGrid.slotsPerDay]);
 
+  const slotsForDay = useMemo(() => {
+    const includeMinus = weekGrid.includeMinusOneLessonDays ?? {};
+    return (d: string) => (includeMinus[d] ? [-1, ...slots] : slots);
+  }, [slots, weekGrid.includeMinusOneLessonDays]);
+
   const sortedClasses = useMemo(() => {
     return classes
       .slice()
@@ -82,7 +87,7 @@ export function AnchorsManagerDialog(props: {
 
   const [classId, setClassId] = useState<string>(sortedClasses[0]?.id || "");
   const [day, setDay] = useState<string>(days[0] || "");
-  const [slot, setSlot] = useState<number>(slots[0] ?? 1);
+  const [slot, setSlot] = useState<number>((slotsForDay(days[0] || "")[0] ?? 1) as number);
 
   const addAnchor = () => {
     if (!classId || !day) return;
@@ -133,7 +138,14 @@ export function AnchorsManagerDialog(props: {
 
               <div className="space-y-2">
                 <Label>День</Label>
-                <Select value={day} onValueChange={setDay}>
+                <Select
+                  value={day}
+                  onValueChange={(nextDay) => {
+                    setDay(nextDay);
+                    const allowed = slotsForDay(nextDay);
+                    if (!allowed.includes(slot)) setSlot(allowed[0] ?? 1);
+                  }}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Выберите день" />
                   </SelectTrigger>
@@ -154,9 +166,9 @@ export function AnchorsManagerDialog(props: {
                     <SelectValue placeholder="Урок" />
                   </SelectTrigger>
                   <SelectContent>
-                    {slots.map((s) => (
+                    {slotsForDay(day).map((s) => (
                       <SelectItem key={s} value={String(s)}>
-                        {s === 0 ? "0-й" : `${s}-й`}
+                        {s === -1 ? "-1" : s === 0 ? "0-й" : `${s}-й`}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -185,13 +197,20 @@ export function AnchorsManagerDialog(props: {
                     <div className="min-w-0">
                       <div className="font-medium truncate">{label}</div>
                       <div className="text-sm text-muted-foreground">
-                        {a.day}, {a.slot === 0 ? "0-й" : `${a.slot}-й`}
+                        {a.day}, {a.slot === -1 ? "-1" : a.slot === 0 ? "0-й" : `${a.slot}-й`}
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <Select
                         value={a.day}
-                        onValueChange={(nextDay) => upsertScheduleAnchor({ ...a, day: nextDay })}
+                        onValueChange={(nextDay) => {
+                          const allowed = slotsForDay(nextDay);
+                          upsertScheduleAnchor({
+                            ...a,
+                            day: nextDay,
+                            slot: allowed.includes(a.slot) ? a.slot : (allowed[0] ?? 1),
+                          });
+                        }}
                       >
                         <SelectTrigger className="w-[180px]">
                           <SelectValue />
@@ -213,9 +232,9 @@ export function AnchorsManagerDialog(props: {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {slots.map((s) => (
+                          {slotsForDay(a.day).map((s) => (
                             <SelectItem key={s} value={String(s)}>
-                              {s === 0 ? "0-й" : `${s}-й`}
+                              {s === -1 ? "-1" : s === 0 ? "0-й" : `${s}-й`}
                             </SelectItem>
                           ))}
                         </SelectContent>
