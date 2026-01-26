@@ -71,11 +71,17 @@ export default function ImportExport() {
     teachers, 
     classes, 
     subjects, 
+    rooms,
     extracurriculars,
     loadAssignments,
     extracurricularAssignments,
     curriculumPlan,
+    weekGrid,
+    teacherAvailability,
+    scheduleLessons,
+    scheduleAnchors,
     importData,
+    restoreAllData,
     addTeacher,
     addClass,
     addSubject,
@@ -205,8 +211,8 @@ export default function ImportExport() {
 
     try {
       if (importPreview.type === 'full') {
-        // Полный импорт из JSON
-        importData(importPreview.data);
+        // Полный импорт из JSON (restore)
+        restoreAllData(importPreview.data);
         toast({
           title: 'Импорт завершён',
           description: 'Все данные успешно импортированы'
@@ -528,8 +534,18 @@ export default function ImportExport() {
             <CardContent className="flex gap-4 flex-wrap">
               <Button 
                 onClick={() => exportToJSON({
-                  teachers, classes, subjects, extracurriculars,
-                  loadAssignments, extracurricularAssignments, curriculumPlan
+                  teachers,
+                  classes,
+                  subjects,
+                  rooms,
+                  extracurriculars,
+                  loadAssignments,
+                  extracurricularAssignments,
+                  curriculumPlan,
+                  weekGrid,
+                  teacherAvailability,
+                  scheduleLessons,
+                  scheduleAnchors,
                 })}
                 variant="outline"
               >
@@ -538,8 +554,18 @@ export default function ImportExport() {
               </Button>
               <Button 
                 onClick={() => exportAllToExcel(
-                  teachers, classes, subjects, extracurriculars,
-                  loadAssignments, extracurricularAssignments, curriculumPlan
+                  teachers,
+                  classes,
+                  subjects,
+                  rooms,
+                  extracurriculars,
+                  loadAssignments,
+                  extracurricularAssignments,
+                  curriculumPlan,
+                  weekGrid,
+                  teacherAvailability,
+                  scheduleLessons,
+                  scheduleAnchors
                 )}
                 variant="outline"
               >
@@ -741,7 +767,7 @@ export default function ImportExport() {
             <AlertDescription>
               Поддерживаются файлы Excel (.xlsx, .xls), CSV (.csv) и JSON (.json). 
               Первая строка должна содержать заголовки столбцов. 
-              Данные добавляются к существующим (не заменяют их).
+              Импорт отдельных справочников добавляет данные к существующим. Полный импорт из JSON заменяет всё (restore).
             </AlertDescription>
           </Alert>
           
