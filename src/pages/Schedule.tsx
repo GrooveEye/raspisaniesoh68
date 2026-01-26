@@ -198,6 +198,30 @@ import {
        [extracurricularAssignments, schedulableExtracurricularIds]
      );
 
+      // Внеурочка «ведёт классный руководитель» не имеет ручных назначений —
+      // её часы должны автоматически привязываться к классному руководителю конкретного класса.
+      const classTeacherLedSchedulableExtracurriculars = useMemo(() => {
+        return schedulableExtracurriculars.filter((e) => e.isClassTeacherLed);
+      }, [schedulableExtracurriculars]);
+
+      const classTeacherLedLoadAssignments = useMemo(() => {
+        return classTeacherLedSchedulableExtracurriculars.flatMap((course) => {
+          return classes
+            .filter((c) => course.targetGrades.includes(c.grade))
+            .filter((c) => Boolean(c.classTeacherId))
+            .map((c) => {
+              return {
+                id: crypto.randomUUID(),
+                teacherId: c.classTeacherId as string,
+                classId: c.id,
+                subjectId: `${EXTRACURRICULAR_SUBJECT_PREFIX}${course.id}`,
+                hoursPerWeek: course.hoursPerWeek,
+                isGroup: false,
+              };
+            });
+        });
+      }, [classTeacherLedSchedulableExtracurriculars, classes]);
+
      const extracurricularSubjects = useMemo(
        () => buildExtracurricularSubjects(schedulableExtracurriculars),
        [schedulableExtracurriculars]
@@ -329,7 +353,7 @@ import {
           })
           .filter((g) => g.classIds.length > 0);
 
-        const mergedAssignments = [...loadAssignments, ...extracurricularLoad];
+        const mergedAssignments = [...loadAssignments, ...extracurricularLoad, ...classTeacherLedLoadAssignments];
 
        // Превращаем закрепления внеурочки в «закрепления псевдо‑предметов»
        const mergedAnchors = scheduleAnchors
