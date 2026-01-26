@@ -55,6 +55,15 @@
     if (slot0Preferred && candidateSlot === 0) score += 40;
     return score;
   }
+
+  function removeTeacherDaySlot(params: { map: Map<string, number[]>; teacherId: string; day: string; slot: number }) {
+    const { map, teacherId, day, slot } = params;
+    const key = `${teacherId}__${day}`;
+    const prev = map.get(key) || [];
+    const next = prev.filter((s) => s !== slot);
+    if (next.length) map.set(key, next);
+    else map.delete(key);
+  }
  
  /**
   * Автоматическое распределение расписания на основе:
@@ -112,13 +121,13 @@
    const slots: number[] = [];
    for (let s = slotsStart; s <= slotsEnd; s++) slots.push(s);
  
-   // Индекс закреплений: classId__subjectId -> anchor
-   const anchorIndex = new Map<string, ScheduleAnchor>();
-   for (const a of anchors) {
-     if (a.subjectId) {
-       anchorIndex.set(`${a.classId}__${a.subjectId}`, a);
-     }
-   }
+    // Индекс закреплений: classId__subjectId -> anchor
+    const anchorIndex = new Map<string, ScheduleAnchor>();
+    for (const a of anchors) {
+      if (a.subjectId) anchorIndex.set(`${a.classId}__${a.subjectId}`, a);
+    }
+
+    const isLessonAnchored = (l: ScheduleLesson) => anchorIndex.has(`${l.classId}__${l.subjectId}`);
  
    // Индекс учителей
    const teacherMap = new Map(teachers.map((t) => [t.id, t]));
@@ -136,6 +145,110 @@
        const prev = teacherDaySlots.get(key) || [];
        if (!prev.includes(slot)) teacherDaySlots.set(key, [...prev, slot]);
      };
+
+      const removeOccupancy = (lesson: ScheduleLesson) => {
+        const key = `${lesson.day}__${lesson.slot}`;
+        const tSet = teacherOccupied.get(key);
+        if (tSet) {
+          tSet.delete(lesson.teacherId);
+          if (tSet.size === 0) teacherOccupied.delete(key);
+        }
+        if (lesson.room) {
+          const rSet = roomOccupied.get(key);
+          if (rSet) {
+            rSet.delete(lesson.room.toLowerCase());
+            if (rSet.size === 0) roomOccupied.delete(key);
+          }
+        }
+        removeTeacherDaySlot({ map: teacherDaySlots, teacherId: lesson.teacherId, day: lesson.day, slot: lesson.slot });
+      };
+
+      const addOccupancy = (lesson: ScheduleLesson) => {
+        const key = `${lesson.day}__${lesson.slot}`;
+        teacherOccupied.set(key, (teacherOccupied.get(key) || new Set()).add(lesson.teacherId));
+        if (lesson.room) {
+          roomOccupied.set(key, (roomOccupied.get(key) || new Set()).add(lesson.room.toLowerCase()));
+        }
+        addTeacherDaySlot(lesson.teacherId, lesson.day, lesson.slot);
+      };
+
+      const canPlaceLesson = (lesson: ScheduleLesson, day: string, slot: number, room: string) => {
+        // Класс свободен
+        const classHasLesson = lessons.some((l) => l.classId === lesson.classId && l.day === day && l.slot === slot);
+        if (classHasLesson) return false;
+
+        // Доступность учителя
+        const available = teacherAvailability[lesson.teacherId]?.[day]?.[slot] ?? true;
+        if (!available) return false;
+
+        // Конфликт учителя
+        const key = `${day}__${slot}`;
+        const teachersInSlot = teacherOccupied.get(key) || new Set();
+        if (teachersInSlot.has(lesson.teacherId)) return false;
+
+        // Конфликт кабинета (если фиксированный)
+        if (room) {
+          const roomsInSlot = roomOccupied.get(key) || new Set();
+          if (roomsInSlot.has(room.toLowerCase())) return false;
+        }
+        return true;
+      };
+
+      const relocateLesson = (lessonToMove: ScheduleLesson) => {
+        // Закреплённые уроки не двигаем
+        if (isLessonAnchored(lessonToMove)) return false;
+
+        const teacher = teacherMap.get(lessonToMove.teacherId);
+        const room = teacher?.primaryRoom || "";
+
+        // Убираем текущую занятость на время поиска нового места
+        removeOccupancy(lessonToMove);
+
+        const candidates: Array<{ day: string; slot: number; score: number }> = [];
+
+        for (const day of days) {
+          const slotOrder = isExtrSubject(lessonToMove.subjectId)
+            ? [...slots].sort((x, y) => (x === 0 ? -1 : y === 0 ? 1 : x - y))
+            : slots;
+
+          for (const slot of slotOrder) {
+            if (!canPlaceLesson(lessonToMove, day, slot, room)) continue;
+
+            // Мягкое правило: не более 2 уроков одного предмета в день
+            const sameSubjectCount = lessons.filter(
+              (l) => l.classId === lessonToMove.classId && l.day === day && l.subjectId === lessonToMove.subjectId
+            ).length;
+            const subjectOk = sameSubjectCount < 2;
+
+            const tdKey = `${lessonToMove.teacherId}__${day}`;
+            const currentTeacherSlots = teacherDaySlots.get(tdKey) || [];
+            let score = scoreCandidate({
+              teacherDaySlots: currentTeacherSlots,
+              candidateSlot: slot,
+              slot0Preferred: isExtrSubject(lessonToMove.subjectId),
+            });
+            if (!subjectOk) score -= 60;
+
+            candidates.push({ day, slot, score });
+          }
+        }
+
+        candidates.sort((a, b) => b.score - a.score);
+
+        const best = candidates[0];
+        if (!best) {
+          // Восстанавливаем исходную занятость
+          addOccupancy(lessonToMove);
+          return false;
+        }
+
+        // Перемещаем
+        lessonToMove.day = best.day;
+        lessonToMove.slot = best.slot;
+        lessonToMove.room = room || undefined;
+        addOccupancy(lessonToMove);
+        return true;
+      };
  
    // Индексируем существующие уроки
    for (const l of lessons) {
@@ -291,7 +404,16 @@
        const existing = lessons.find(
          (l) => l.classId === cls.id && l.day === anchor.day && l.slot === anchor.slot
        );
-       if (existing) continue;
+        if (existing) {
+          // Если слот занят незакреплённым уроком — пытаемся переставить его
+          const moved = relocateLesson(existing);
+          if (!moved) {
+            conflicts.push(
+              `${cls.grade}${cls.letter}: ${anchor.day} ${anchor.slot}-й — слот закрепления занят и не удалось освободить`
+            );
+            continue;
+          }
+        }
  
        const teacher = teacherMap.get(a.teacherId);
        const room = teacher?.primaryRoom || "";
@@ -328,11 +450,9 @@
          groupNumber: a.groupNumber,
        };
        lessons.push(lesson);
-       teacherOccupied.set(key, teachersInSlot.add(a.teacherId));
-         addTeacherDaySlot(a.teacherId, anchor.day, anchor.slot);
-       if (room) {
-         roomOccupied.set(key, (roomOccupied.get(key) || new Set()).add(room.toLowerCase()));
-       }
+        teacherOccupied.set(key, teachersInSlot.add(a.teacherId));
+        addTeacherDaySlot(a.teacherId, anchor.day, anchor.slot);
+        if (room) roomOccupied.set(key, (roomOccupied.get(key) || new Set()).add(room.toLowerCase()));
      }
  
      // Затем распределяем незакреплённые

@@ -41,6 +41,21 @@ import {
   EXTRACURRICULAR_SUBJECT_PREFIX,
   type ExtracurricularHoursByAssignment,
 } from "@/lib/schedule/extracurricularAsSubjects";
+
+  const SCHEDULABLE_EXTRACURRICULAR_NAMES = [
+    "Разговоры о важном",
+    "Россия - мои горизонты",
+    "Россия — мои горизонты",
+    "Россия – мои горизонты",
+  ];
+
+  function normalizeName(name: string) {
+    return name
+      .trim()
+      .toLowerCase()
+      .replace(/[—–]/g, "-")
+      .replace(/\s+/g, " ");
+  }
  
  function classLabel(grade: number, letter: string) {
    return `${grade}${letter}`;
@@ -168,10 +183,25 @@ import {
        });
    }, [scheduleAnchors, classes, subjects, extracurriculars]);
 
-    const extracurricularSubjects = useMemo(
-      () => buildExtracurricularSubjects(extracurriculars),
-      [extracurriculars]
-    );
+     const schedulableExtracurriculars = useMemo(() => {
+       const allowed = new Set(SCHEDULABLE_EXTRACURRICULAR_NAMES.map(normalizeName));
+       return extracurriculars.filter((e) => allowed.has(normalizeName(e.name)));
+     }, [extracurriculars]);
+
+     const schedulableExtracurricularIds = useMemo(
+       () => new Set(schedulableExtracurriculars.map((e) => e.id)),
+       [schedulableExtracurriculars]
+     );
+
+     const schedulableExtracurricularAssignments = useMemo(
+       () => extracurricularAssignments.filter((a) => schedulableExtracurricularIds.has(a.extracurricularId)),
+       [extracurricularAssignments, schedulableExtracurricularIds]
+     );
+
+     const extracurricularSubjects = useMemo(
+       () => buildExtracurricularSubjects(schedulableExtracurriculars),
+       [schedulableExtracurriculars]
+     );
 
     const combinedSubjects = useMemo(
       () => [...subjects, ...extracurricularSubjects],
@@ -189,12 +219,12 @@ import {
       Record<string, Record<string, boolean>>
     >({});
 
-    useEffect(() => {
+     useEffect(() => {
       if (!autoDistributeOpen) return;
       // Инициализируем структуру, чтобы inputs были контролируемыми
       setExtracurricularHours((prev) => {
         const next: ExtracurricularHoursByAssignment = { ...prev };
-        for (const a of extracurricularAssignments) {
+         for (const a of schedulableExtracurricularAssignments) {
           if (!next[a.id]) next[a.id] = {};
           const targetClasses = sortedClasses.filter((c) => a.targetGrades.includes(c.grade));
           for (const c of targetClasses) {
@@ -206,7 +236,7 @@ import {
 
       setExtracurricularMode((prev) => {
         const next = { ...prev };
-        for (const a of extracurricularAssignments) {
+         for (const a of schedulableExtracurricularAssignments) {
           if (!next[a.id]) next[a.id] = "split";
         }
         return next;
@@ -214,7 +244,7 @@ import {
 
       setExtracurricularParallelClasses((prev) => {
         const next = { ...prev };
-        for (const a of extracurricularAssignments) {
+         for (const a of schedulableExtracurricularAssignments) {
           const targetClasses = sortedClasses.filter((c) => a.targetGrades.includes(c.grade));
           if (!next[a.id]) next[a.id] = {};
           for (const c of targetClasses) {
@@ -223,7 +253,7 @@ import {
         }
         return next;
       });
-    }, [autoDistributeOpen, extracurricularAssignments, sortedClasses]);
+     }, [autoDistributeOpen, schedulableExtracurricularAssignments, sortedClasses]);
 
     const extracurricularValidation = useMemo(() => {
       const byId = new Map<
@@ -238,7 +268,7 @@ import {
         }
       >();
 
-      for (const a of extracurricularAssignments) {
+       for (const a of schedulableExtracurricularAssignments) {
         const targetClassIds = sortedClasses
           .filter((c) => a.targetGrades.includes(c.grade))
           .map((c) => c.id);
@@ -268,10 +298,10 @@ import {
 
       const allOk = Array.from(byId.values()).every((x) => x.ok);
       return { byId, allOk };
-    }, [extracurricularAssignments, extracurricularHours, extracurricularMode, extracurricularParallelClasses, sortedClasses]);
+     }, [schedulableExtracurricularAssignments, extracurricularHours, extracurricularMode, extracurricularParallelClasses, sortedClasses]);
  
      const handleAutoDistribute = () => {
-        const splitAssignments = extracurricularAssignments.filter(
+         const splitAssignments = schedulableExtracurricularAssignments.filter(
           (a) => (extracurricularMode[a.id] || "split") === "split"
         );
 
@@ -281,7 +311,7 @@ import {
           hoursByAssignment: extracurricularHours,
         });
 
-        const sharedGroups = extracurricularAssignments
+         const sharedGroups = schedulableExtracurricularAssignments
           .filter((a) => (extracurricularMode[a.id] || "split") === "parallel")
           .map((a) => {
             const targetClassIds = sortedClasses
@@ -299,7 +329,7 @@ import {
           })
           .filter((g) => g.classIds.length > 0);
 
-       const mergedAssignments = [...loadAssignments, ...extracurricularLoad];
+        const mergedAssignments = [...loadAssignments, ...extracurricularLoad];
 
        // Превращаем закрепления внеурочки в «закрепления псевдо‑предметов»
        const mergedAnchors = scheduleAnchors
@@ -647,7 +677,7 @@ import {
           subjects={combinedSubjects}
          teachers={teachers}
           loadAssignments={[...loadAssignments, ...buildExtracurricularLoadAssignments({
-            extracurricularAssignments,
+             extracurricularAssignments: schedulableExtracurricularAssignments,
             classes,
             hoursByAssignment: extracurricularHours,
           })]}
@@ -675,16 +705,16 @@ import {
              </AlertDialogDescription>
            </AlertDialogHeader>
 
-            {extracurricularAssignments.length ? (
+             {schedulableExtracurricularAssignments.length ? (
               <div className="mt-4 space-y-4">
                 <div className="text-sm text-muted-foreground">
                     Внеурочная деятельность распределяется как «обычные предметы», но часы нужно разложить по классам вручную
                     (сумма по классам должна совпадать с общим количеством часов по назначению).
                 </div>
 
-                <div className="space-y-4 max-h-[40vh] overflow-auto rounded-md border p-3">
-                  {extracurricularAssignments.map((a) => {
-                    const ext = extracurriculars.find((e) => e.id === a.extracurricularId);
+                 <div className="space-y-4 max-h-[40vh] overflow-auto rounded-md border p-3">
+                   {schedulableExtracurricularAssignments.map((a) => {
+                     const ext = schedulableExtracurriculars.find((e) => e.id === a.extracurricularId);
                     const teacher = teachers.find((t) => t.id === a.teacherId);
                     const v = extracurricularValidation.byId.get(a.id);
                     const targetClasses = sortedClasses.filter((c) => a.targetGrades.includes(c.grade));
@@ -788,9 +818,9 @@ import {
              <AlertDialogCancel>Отмена</AlertDialogCancel>
               <AlertDialogAction
                 onClick={handleAutoDistribute}
-                disabled={extracurricularAssignments.length > 0 && !extracurricularValidation.allOk}
+                 disabled={schedulableExtracurricularAssignments.length > 0 && !extracurricularValidation.allOk}
                 title={
-                  extracurricularAssignments.length > 0 && !extracurricularValidation.allOk
+                   schedulableExtracurricularAssignments.length > 0 && !extracurricularValidation.allOk
                     ? "Суммы часов внеурочной деятельности по классам должны совпадать с общим количеством часов"
                     : undefined
                 }
