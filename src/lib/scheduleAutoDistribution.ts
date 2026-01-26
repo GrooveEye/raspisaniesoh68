@@ -52,8 +52,21 @@
     if (adjacent) score += 15;
     // Небольшой бонус за более плотный диапазон (приближаем к «целому дню»)
     score -= (max - min) * 2;
-    if (slot0Preferred && candidateSlot === 0) score += 40;
+    // Правило: 0-й урок — в последнюю очередь
+    if (slot0Preferred && candidateSlot === 0) score -= 80;
     return score;
+  }
+
+  // Порядок размещения слотов:
+  // 1) 1..6
+  // 2) 7..N
+  // 3) 0 — всегда в конце
+  function orderSlotsForPlacement(allSlots: number[]) {
+    const hasZero = allSlots.includes(0);
+    const nonZero = allSlots.filter((s) => s !== 0);
+    const first = nonZero.filter((s) => s >= 1 && s <= 6).sort((a, b) => a - b);
+    const rest = nonZero.filter((s) => s < 1 || s > 6).sort((a, b) => a - b);
+    return hasZero ? [...first, ...rest, 0] : [...first, ...rest];
   }
 
   function removeTeacherDaySlot(params: { map: Map<string, number[]>; teacherId: string; day: string; slot: number }) {
@@ -207,9 +220,7 @@
         const candidates: Array<{ day: string; slot: number; score: number }> = [];
 
         for (const day of days) {
-          const slotOrder = isExtrSubject(lessonToMove.subjectId)
-            ? [...slots].sort((x, y) => (x === 0 ? -1 : y === 0 ? 1 : x - y))
-            : slots;
+          const slotOrder = orderSlotsForPlacement(slots);
 
           for (const slot of slotOrder) {
             if (!canPlaceLesson(lessonToMove, day, slot, room)) continue;
@@ -290,9 +301,7 @@
         if (placed >= needed) break;
         if (forcedAnchor && forcedAnchor.day !== day) continue;
 
-        const slotOrder = isExtrSubject(g.subjectId)
-          ? [...slots].sort((x, y) => (x === 0 ? -1 : y === 0 ? 1 : x - y))
-          : slots;
+        const slotOrder = orderSlotsForPlacement(slots);
 
         const candidates: { slot: number; score: number }[] = [];
         for (const slot of slotOrder) {
@@ -477,10 +486,7 @@
           // Собираем кандидаты по дню и выбираем лучший по эвристике
           const candidates: { slot: number; score: number }[] = [];
 
-          // Для внеурочки предпочитаем 0-й урок
-          const slotOrder = isExtrSubject(a.subjectId)
-            ? [...slots].sort((x, y) => (x === 0 ? -1 : y === 0 ? 1 : x - y))
-            : slots;
+          const slotOrder = orderSlotsForPlacement(slots);
 
           for (const slot of slotOrder) {
             if (placed >= needed) break;
