@@ -60,6 +60,12 @@ import {
  function classLabel(grade: number, letter: string) {
    return `${grade}${letter}`;
  }
+
+function extractSubjectIdFromConflict(message: string) {
+  // Пример: "10А: не удалось разместить 2 урок(ов) по предмету (4ua4q8lyk)"
+  const m = message.match(/\(([^)]+)\)\s*$/);
+  return m?.[1] ?? null;
+}
  
  export default function Schedule() {
    const {
@@ -237,6 +243,23 @@ import {
       () => [...subjects, ...extracurricularSubjects],
       [subjects, extracurricularSubjects]
     );
+
+  const subjectNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const s of combinedSubjects) map.set(s.id, s.name);
+    return map;
+  }, [combinedSubjects]);
+
+  const formatAutoDistributionConflict = (message: string) => {
+    const subjectId = extractSubjectIdFromConflict(message);
+    const subjectName = subjectId ? subjectNameById.get(subjectId) : null;
+    if (!subjectId || !subjectName) return { title: message, subtitle: null as string | null };
+
+    // Заменяем хвост "(subjectId)" на читаемое название
+    const title = message.replace(/\s*\([^)]+\)\s*$/, ``);
+    const subtitle = `${subjectName} (id: ${subjectId})`;
+    return { title, subtitle };
+  };
 
     // Ручное распределение часов внеурочки по классам (перед запуском автораспределения)
     const [extracurricularHours, setExtracurricularHours] = useState<ExtracurricularHoursByAssignment>({});
@@ -537,7 +560,17 @@ import {
                           {autoDistributionConflicts.map((msg, idx) => (
                             <div key={`${idx}-${msg}`} className="rounded-md border p-3">
                               <Badge variant="destructive">Не размещено</Badge>
-                              <div className="mt-2 text-sm">{msg}</div>
+                              {(() => {
+                                const f = formatAutoDistributionConflict(msg);
+                                return (
+                                  <div className="mt-2 space-y-1">
+                                    <div className="text-sm">{f.title}</div>
+                                    {f.subtitle ? (
+                                      <div className="text-xs text-muted-foreground">{f.subtitle}</div>
+                                    ) : null}
+                                  </div>
+                                );
+                              })()}
                             </div>
                           ))}
                         </div>
