@@ -105,11 +105,11 @@ export function SectionImportExportActions<T>(props: {
       <div className="flex flex-wrap gap-2">
         <Button variant="outline" onClick={exportJson}>
           <FileJson className="mr-2 h-4 w-4" />
-          Экспорт JSON
+          Экспорт в JSON
         </Button>
         <Button variant="outline" onClick={props.exportExcel}>
           <FileSpreadsheet className="mr-2 h-4 w-4" />
-          Экспорт Excel
+          Экспорт в Excel
         </Button>
         <Button variant="secondary" onClick={pickImport} disabled={isParsing}>
           <Upload className="mr-2 h-4 w-4" />
