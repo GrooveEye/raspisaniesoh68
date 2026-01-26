@@ -574,16 +574,6 @@ export default function Distribution() {
 
         <div className="flex flex-wrap gap-2">
           <Button
-            asChild
-            variant="outline"
-          >
-            <Link to="/import-export">
-              <FileSpreadsheet className="h-4 w-4 mr-2" />
-              Экспорт / Импорт
-            </Link>
-          </Button>
-
-          <Button
             variant="outline"
             disabled={loadAssignments.length === 0 && extracurricularAssignments.length === 0}
             onClick={() =>
