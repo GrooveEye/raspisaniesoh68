@@ -116,6 +116,10 @@ import {
      existing?: ScheduleLesson;
      issues?: string[];
    } | null>(null);
+
+  // Конфликты автораспределения (например: «не удалось разместить N урок(ов)…»).
+  // Это не конфликты слотов, поэтому они не попадают в getScheduleIssues.
+  const [autoDistributionConflicts, setAutoDistributionConflicts] = useState<string[]>([]);
  
    const { byLessonId } = useMemo(() => {
      return getScheduleIssues({
@@ -126,6 +130,8 @@ import {
    }, [scheduleLessons, teacherAvailability, scheduleAnchors]);
  
    const issuesByLessonId = byLessonId;
+
+  const totalErrorsCount = byLessonId.size + autoDistributionConflicts.length;
  
    const filteredClasses = useMemo(() => {
      return sortedClasses.filter((c) => visibleClassIds.has(c.id));
@@ -382,6 +388,7 @@ import {
        });
 
        setScheduleLessons(result.lessons);
+      setAutoDistributionConflicts(result.conflicts);
  
      setAutoDistributeOpen(false);
      toast({
@@ -456,7 +463,7 @@ import {
            <TabsTrigger value="schedule">Расписание (по дням)</TabsTrigger>
             <TabsTrigger value="schedule-alt">Расписание (по классам)</TabsTrigger>
            <TabsTrigger value="errors">
-             Ошибки {byLessonId.size > 0 ? `(${byLessonId.size})` : ""}
+              Ошибки {totalErrorsCount > 0 ? `(${totalErrorsCount})` : ""}
            </TabsTrigger>
            <TabsTrigger value="availability">Доступность</TabsTrigger>
            <TabsTrigger value="anchors">Закрепления</TabsTrigger>
@@ -512,46 +519,70 @@ import {
                <CardTitle>Ошибки и конфликты в расписании</CardTitle>
              </CardHeader>
              <CardContent>
-               {byLessonId.size === 0 ? (
+                {totalErrorsCount === 0 ? (
                  <div className="text-sm text-muted-foreground">
                    Конфликтов не найдено. Расписание составлено корректно.
                  </div>
                ) : (
-                 <div className="space-y-3">
-                   {Array.from(byLessonId.entries()).map(([lessonId, issues]) => {
-                     const lesson = scheduleLessons.find((l) => l.id === lessonId);
-                     if (!lesson) return null;
-                     const cls = classes.find((c) => c.id === lesson.classId);
-                      const subj = combinedSubjects.find((s) => s.id === lesson.subjectId);
-                     const teach = teachers.find((t) => t.id === lesson.teacherId);
-                     return (
-                       <div key={lessonId} className="rounded-md border p-3 space-y-2">
-                         <div className="flex items-center justify-between">
-                           <div className="font-medium">
-                             {cls ? `${cls.grade}${cls.letter}` : "?"} — {lesson.day}, {lesson.slot === 0 ? "0-й" : `${lesson.slot}-й`}
-                           </div>
-                           <Button
-                             variant="secondary"
-                             size="sm"
-                             onClick={() => openEditor(lesson.classId, lesson.day, lesson.slot)}
-                           >
-                             Редактировать
-                           </Button>
-                         </div>
-                         <div className="text-sm text-muted-foreground">
-                           {subj?.name || "?"} — {teach?.fullName || "?"}
-                         </div>
-                         <div className="flex flex-wrap gap-2">
-                           {issues.map((issue, idx) => (
-                             <Badge key={idx} variant="destructive">
-                               {issue.message}
-                             </Badge>
-                           ))}
-                         </div>
-                       </div>
-                     );
-                   })}
-                 </div>
+                  <div className="space-y-6">
+                    {autoDistributionConflicts.length > 0 && (
+                      <div className="space-y-2">
+                        <div className="font-medium">Недостаточно слотов для размещения</div>
+                        <div className="text-sm text-muted-foreground">
+                          Эти сообщения появляются, когда по некоторым назначениям не удалось поставить нужное количество
+                          уроков (часов) — даже если прямых конфликтов учителя/кабинета в сетке нет.
+                        </div>
+
+                        <div className="space-y-2">
+                          {autoDistributionConflicts.map((msg, idx) => (
+                            <div key={`${idx}-${msg}`} className="rounded-md border p-3">
+                              <Badge variant="destructive">Не размещено</Badge>
+                              <div className="mt-2 text-sm">{msg}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {byLessonId.size > 0 && (
+                      <div className="space-y-3">
+                        <div className="font-medium">Конфликты слотов (учитель/кабинет/закрепления)</div>
+                        {Array.from(byLessonId.entries()).map(([lessonId, issues]) => {
+                          const lesson = scheduleLessons.find((l) => l.id === lessonId);
+                          if (!lesson) return null;
+                          const cls = classes.find((c) => c.id === lesson.classId);
+                          const subj = combinedSubjects.find((s) => s.id === lesson.subjectId);
+                          const teach = teachers.find((t) => t.id === lesson.teacherId);
+                          return (
+                            <div key={lessonId} className="rounded-md border p-3 space-y-2">
+                              <div className="flex items-center justify-between">
+                                <div className="font-medium">
+                                  {cls ? `${cls.grade}${cls.letter}` : "?"} — {lesson.day}, {lesson.slot === 0 ? "0-й" : `${lesson.slot}-й`}
+                                </div>
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={() => openEditor(lesson.classId, lesson.day, lesson.slot)}
+                                >
+                                  Редактировать
+                                </Button>
+                              </div>
+                              <div className="text-sm text-muted-foreground">
+                                {subj?.name || "?"} — {teach?.fullName || "?"}
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                {issues.map((issue, idx) => (
+                                  <Badge key={idx} variant="destructive">
+                                    {issue.message}
+                                  </Badge>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                )}
              </CardContent>
            </Card>
