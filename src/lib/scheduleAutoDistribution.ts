@@ -118,6 +118,15 @@
      existingLessons = [],
     sharedGroups = [],
    } = params;
+
+  const assignmentGroupKey = (params: {
+    subjectId: string;
+    isGroup?: boolean;
+    groupNumber?: number;
+  }) => {
+    const g = params.isGroup ? Number(params.groupNumber || 0) : 0;
+    return `${params.subjectId}__g${g}`;
+  };
  
    const lessons: ScheduleLesson[] = [...existingLessons];
    const conflicts: string[] = [];
@@ -470,7 +479,22 @@
        if (anchor) continue; // уже обработано
  
        // Сколько уроков этого предмета уже есть у класса?
-       const existing = lessons.filter((l) => l.classId === cls.id && l.subjectId === a.subjectId);
+        // ВАЖНО: при делении на группы часы считаются отдельно по каждой группе.
+        const aKey = assignmentGroupKey({
+          subjectId: a.subjectId,
+          isGroup: a.isGroup,
+          groupNumber: a.groupNumber,
+        });
+        const existing = lessons.filter((l) => {
+          if (l.classId !== cls.id) return false;
+          return (
+            assignmentGroupKey({
+              subjectId: l.subjectId,
+              isGroup: l.isGroup,
+              groupNumber: l.groupNumber,
+            }) === aKey
+          );
+        });
        const needed = a.hoursPerWeek - existing.length;
  
        if (needed <= 0) continue;
