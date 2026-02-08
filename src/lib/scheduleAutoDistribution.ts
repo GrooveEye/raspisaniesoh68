@@ -559,43 +559,66 @@
  
    // Для каждого класса распределяем уроки
    for (const cls of classes) {
-     const assignments = assignmentsByClass.get(cls.id) || [];
- 
+     const assignmentsRaw = assignmentsByClass.get(cls.id) || [];
+
+     // Счётчик заполненности дней по классу — помогает избегать «пустых дней».
+     const classDayCount = new Map<string, number>();
+     for (const day of days) {
+       classDayCount.set(
+         day,
+         lessons.filter((l) => l.classId === cls.id && l.day === day).length
+       );
+     }
+     const bumpClassDay = (day: string, n = 1) => {
+       classDayCount.set(day, (classDayCount.get(day) || 0) + n);
+     };
+     const orderedDaysForClass = () => {
+       return days
+         .slice()
+         .sort((a, b) => (classDayCount.get(a) || 0) - (classDayCount.get(b) || 0));
+     };
+
+     // Эвристика: сначала пытаемся расставлять предметы с большим количеством часов —
+     // так меньше шанс, что «мелкие» предметы разрежут сетку и большие уже не влезут.
+     const assignments = assignmentsRaw
+       .slice()
+       .sort((a, b) => (Number(b.hoursPerWeek) || 0) - (Number(a.hoursPerWeek) || 0));
+
      // Сначала распределяем закреплённые
      for (const a of assignments) {
        const anchor = anchorIndex.get(`${cls.id}__${a.subjectId}`);
        if (!anchor) continue;
 
-        if (!isSlotAllowed(anchor.day, anchor.slot)) {
-          conflicts.push(
-            `${cls.grade}${cls.letter}: ${anchor.day} ${anchor.slot} — слот закрепления недоступен в сетке недели`
-          );
-          continue;
-        }
- 
+       if (!isSlotAllowed(anchor.day, anchor.slot)) {
+         conflicts.push(
+           `${cls.grade}${cls.letter}: ${anchor.day} ${anchor.slot} — слот закрепления недоступен в сетке недели`
+         );
+         continue;
+       }
+
        // Проверяем, есть ли уже урок в этом слоте
        const existing = lessons.find(
          (l) => l.classId === cls.id && l.day === anchor.day && l.slot === anchor.slot
        );
-        if (existing) {
-          // Если слот занят незакреплённым уроком — пытаемся переставить его
-          const moved = relocateLesson(existing);
-          if (!moved) {
-            conflicts.push(
-              `${cls.grade}${cls.letter}: ${anchor.day} ${anchor.slot}-й — слот закрепления занят и не удалось освободить`
-            );
-            continue;
-          }
-        }
- 
-      // Подбираем кабинет (закрепления тоже должны получать кабинет)
-      const teacher = teacherMap.get(a.teacherId);
-      const lockedRoom = teacher?.primaryRoom && !teacher?.isUniversalRoom ? teacher.primaryRoom : "";
-      let room = lockedRoom;
-      if (!room) {
-        room = pickRoomForSlot({ teacherId: a.teacherId, subjectId: a.subjectId, day: anchor.day, slot: anchor.slot }).room;
-      }
- 
+       if (existing) {
+         // Если слот занят незакреплённым уроком — пытаемся переставить его
+         const moved = relocateLesson(existing);
+         if (!moved) {
+           conflicts.push(
+             `${cls.grade}${cls.letter}: ${anchor.day} ${anchor.slot}-й — слот закрепления занят и не удалось освободить`
+           );
+           continue;
+         }
+       }
+
+       // Подбираем кабинет (закрепления тоже должны получать кабинет)
+       const teacher = teacherMap.get(a.teacherId);
+       const lockedRoom = teacher?.primaryRoom && !teacher?.isUniversalRoom ? teacher.primaryRoom : "";
+       let room = lockedRoom;
+       if (!room) {
+         room = pickRoomForSlot({ teacherId: a.teacherId, subjectId: a.subjectId, day: anchor.day, slot: anchor.slot }).room;
+       }
+
        // Проверяем доступность учителя
        const available = teacherAvailability[a.teacherId]?.[anchor.day]?.[anchor.slot] ?? true;
        if (!available) {
@@ -604,7 +627,7 @@
          );
          continue;
        }
- 
+
        // Проверяем конфликты
        const key = `${anchor.day}__${anchor.slot}`;
        const teachersInSlot = teacherOccupied.get(key) || new Set();
@@ -614,15 +637,15 @@
          );
          continue;
        }
- 
-      // Проверяем конфликт кабинета (если подобран)
-      if (room) {
-        const roomsInSlot = roomOccupied.get(key) || new Set();
-        if (roomsInSlot.has(room.toLowerCase())) {
-          conflicts.push(`${cls.grade}${cls.letter}: ${anchor.day} ${anchor.slot}-й — кабинет занят (закрепление)`);
-          continue;
-        }
-      }
+
+       // Проверяем конфликт кабинета (если подобран)
+       if (room) {
+         const roomsInSlot = roomOccupied.get(key) || new Set();
+         if (roomsInSlot.has(room.toLowerCase())) {
+           conflicts.push(`${cls.grade}${cls.letter}: ${anchor.day} ${anchor.slot}-й — кабинет занят (закрепление)`);
+           continue;
+         }
+       }
 
        // Добавляем урок
        const lesson: ScheduleLesson = {
@@ -637,140 +660,142 @@
          groupNumber: a.groupNumber,
        };
        lessons.push(lesson);
-        teacherOccupied.set(key, teachersInSlot.add(a.teacherId));
-        addTeacherDaySlot(a.teacherId, anchor.day, anchor.slot);
-        if (room) roomOccupied.set(key, (roomOccupied.get(key) || new Set()).add(room.toLowerCase()));
+       teacherOccupied.set(key, teachersInSlot.add(a.teacherId));
+       addTeacherDaySlot(a.teacherId, anchor.day, anchor.slot);
+       if (room) roomOccupied.set(key, (roomOccupied.get(key) || new Set()).add(room.toLowerCase()));
+       bumpClassDay(anchor.day, 1);
      }
- 
+
      // Затем распределяем незакреплённые
      for (const a of assignments) {
        const anchor = anchorIndex.get(`${cls.id}__${a.subjectId}`);
        if (anchor) continue; // уже обработано
- 
+
        // Сколько уроков этого предмета уже есть у класса?
-        // ВАЖНО: при делении на группы часы считаются отдельно по каждой группе.
-        const aKey = assignmentGroupKey({
-          subjectId: a.subjectId,
-          isGroup: a.isGroup,
-          groupNumber: a.groupNumber,
-        });
-        const existing = lessons.filter((l) => {
-          if (l.classId !== cls.id) return false;
-          return (
-            assignmentGroupKey({
-              subjectId: l.subjectId,
-              isGroup: l.isGroup,
-              groupNumber: l.groupNumber,
-            }) === aKey
-          );
-        });
+       // ВАЖНО: при делении на группы часы считаются отдельно по каждой группе.
+       const aKey = assignmentGroupKey({
+         subjectId: a.subjectId,
+         isGroup: a.isGroup,
+         groupNumber: a.groupNumber,
+       });
+       const existing = lessons.filter((l) => {
+         if (l.classId !== cls.id) return false;
+         return (
+           assignmentGroupKey({
+             subjectId: l.subjectId,
+             isGroup: l.isGroup,
+             groupNumber: l.groupNumber,
+           }) === aKey
+         );
+       });
        const needed = a.hoursPerWeek - existing.length;
- 
+
        if (needed <= 0) continue;
- 
+
        const teacher = teacherMap.get(a.teacherId);
-      const lockedRoom = teacher?.primaryRoom && !teacher?.isUniversalRoom ? teacher.primaryRoom : "";
- 
-        // Ищем свободные слоты для этого класса
+       const lockedRoom = teacher?.primaryRoom && !teacher?.isUniversalRoom ? teacher.primaryRoom : "";
+
+       // Ищем свободные слоты для этого класса
        let placed = 0;
-       for (const day of days) {
-          if (placed >= needed) break;
+       for (const day of orderedDaysForClass()) {
+         if (placed >= needed) break;
 
-          // Собираем кандидаты по дню и выбираем лучший по эвристике
-          const candidates: { slot: number; score: number }[] = [];
+         // Собираем кандидаты по дню и выбираем лучший по эвристике
+         const candidates: { slot: number; score: number }[] = [];
 
-          // -1 слот используем только для закреплений
-          const slotOrder = orderSlotsForPlacement(slotsForDay(day, { includeMinusOne: false }));
+         // -1 слот используем только для закреплений
+         const slotOrder = orderSlotsForPlacement(slotsForDay(day, { includeMinusOne: false }));
 
-          for (const slot of slotOrder) {
-            if (placed >= needed) break;
+         for (const slot of slotOrder) {
+           if (placed >= needed) break;
 
-            // Проверяем, есть ли уже урок у класса в этом слоте
-            const classHasLesson = lessons.some(
-              (l) => l.classId === cls.id && l.day === day && l.slot === slot
-            );
-            if (classHasLesson) continue;
+           // Проверяем, есть ли уже урок у класса в этом слоте
+           const classHasLesson = lessons.some(
+             (l) => l.classId === cls.id && l.day === day && l.slot === slot
+           );
+           if (classHasLesson) continue;
 
-            // Правило: одному классу один предмет не более 2 раз в день (мягкое ограничение)
-            const sameSubjectCount = lessons.filter(
-              (l) => l.classId === cls.id && l.day === day && l.subjectId === a.subjectId
-            ).length;
-            const subjectOk = sameSubjectCount < 2;
+           // Правило: одному классу один предмет не более 2 раз в день (мягкое ограничение)
+           const sameSubjectCount = lessons.filter(
+             (l) => l.classId === cls.id && l.day === day && l.subjectId === a.subjectId
+           ).length;
+           const subjectOk = sameSubjectCount < 2;
 
-            // Проверяем доступность учителя
-            const available = teacherAvailability[a.teacherId]?.[day]?.[slot] ?? true;
-            if (!available) continue;
+           // Проверяем доступность учителя
+           const available = teacherAvailability[a.teacherId]?.[day]?.[slot] ?? true;
+           if (!available) continue;
 
-            // Проверяем конфликты учителя
-            const key = `${day}__${slot}`;
-            const teachersInSlot = teacherOccupied.get(key) || new Set();
-            if (teachersInSlot.has(a.teacherId)) continue;
+           // Проверяем конфликты учителя
+           const key = `${day}__${slot}`;
+           const teachersInSlot = teacherOccupied.get(key) || new Set();
+           if (teachersInSlot.has(a.teacherId)) continue;
 
-            // Подбираем кабинет и проверяем конфликт кабинета
-            let room = lockedRoom;
-            if (!room) room = pickRoomForSlot({ teacherId: a.teacherId, subjectId: a.subjectId, day, slot }).room;
-            if (room) {
-              const roomsInSlot = roomOccupied.get(key) || new Set();
-              if (roomsInSlot.has(room.toLowerCase())) continue;
-            }
+           // Подбираем кабинет и проверяем конфликт кабинета
+           let room = lockedRoom;
+           if (!room) room = pickRoomForSlot({ teacherId: a.teacherId, subjectId: a.subjectId, day, slot }).room;
+           if (room) {
+             const roomsInSlot = roomOccupied.get(key) || new Set();
+             if (roomsInSlot.has(room.toLowerCase())) continue;
+           }
 
-            let score = scoreForClassPlacement({
-              teacherId: a.teacherId,
-              classId: cls.id,
-              subjectId: a.subjectId,
-              day,
-              slot,
-            });
-            if (!subjectOk) score -= 60;
+           let score = scoreForClassPlacement({
+             teacherId: a.teacherId,
+             classId: cls.id,
+             subjectId: a.subjectId,
+             day,
+             slot,
+           });
+           if (!subjectOk) score -= 60;
 
-            candidates.push({ slot, score });
-          }
+           candidates.push({ slot, score });
+         }
 
-          candidates.sort((x, y) => y.score - x.score);
+         candidates.sort((x, y) => y.score - x.score);
 
-          for (const cand of candidates) {
-            if (placed >= needed) break;
-            const slot = cand.slot;
+         for (const cand of candidates) {
+           if (placed >= needed) break;
+           const slot = cand.slot;
 
-            // Повторные проверки (на случай изменений в процессе размещения)
-            const classHasLesson = lessons.some(
-              (l) => l.classId === cls.id && l.day === day && l.slot === slot
-            );
-            if (classHasLesson) continue;
-            const available = teacherAvailability[a.teacherId]?.[day]?.[slot] ?? true;
-            if (!available) continue;
-            const key = `${day}__${slot}`;
-            const teachersInSlot = teacherOccupied.get(key) || new Set();
-            if (teachersInSlot.has(a.teacherId)) continue;
+           // Повторные проверки (на случай изменений в процессе размещения)
+           const classHasLesson = lessons.some(
+             (l) => l.classId === cls.id && l.day === day && l.slot === slot
+           );
+           if (classHasLesson) continue;
+           const available = teacherAvailability[a.teacherId]?.[day]?.[slot] ?? true;
+           if (!available) continue;
+           const key = `${day}__${slot}`;
+           const teachersInSlot = teacherOccupied.get(key) || new Set();
+           if (teachersInSlot.has(a.teacherId)) continue;
 
-            let room = lockedRoom;
-            if (!room) room = pickRoomForSlot({ teacherId: a.teacherId, subjectId: a.subjectId, day, slot }).room;
-            if (room) {
-              const roomsInSlot = roomOccupied.get(key) || new Set();
-              if (roomsInSlot.has(room.toLowerCase())) continue;
-            }
+           let room = lockedRoom;
+           if (!room) room = pickRoomForSlot({ teacherId: a.teacherId, subjectId: a.subjectId, day, slot }).room;
+           if (room) {
+             const roomsInSlot = roomOccupied.get(key) || new Set();
+             if (roomsInSlot.has(room.toLowerCase())) continue;
+           }
 
-            const lesson: ScheduleLesson = {
-              id: crypto?.randomUUID?.() ?? String(Date.now() + Math.random()),
-              classId: cls.id,
-              day,
-              slot,
-              subjectId: a.subjectId,
-              teacherId: a.teacherId,
-              room: room || undefined,
-              isGroup: a.isGroup,
-              groupNumber: a.groupNumber,
-            };
-            lessons.push(lesson);
-            teacherOccupied.set(key, teachersInSlot.add(a.teacherId));
-            addTeacherDaySlot(a.teacherId, day, slot);
-            if (room) {
-              roomOccupied.set(key, (roomOccupied.get(key) || new Set()).add(room.toLowerCase()));
-            }
-            placed++;
-          }
+           const lesson: ScheduleLesson = {
+             id: crypto?.randomUUID?.() ?? String(Date.now() + Math.random()),
+             classId: cls.id,
+             day,
+             slot,
+             subjectId: a.subjectId,
+             teacherId: a.teacherId,
+             room: room || undefined,
+             isGroup: a.isGroup,
+             groupNumber: a.groupNumber,
+           };
+           lessons.push(lesson);
+           teacherOccupied.set(key, teachersInSlot.add(a.teacherId));
+           addTeacherDaySlot(a.teacherId, day, slot);
+           if (room) {
+             roomOccupied.set(key, (roomOccupied.get(key) || new Set()).add(room.toLowerCase()));
+           }
+           placed++;
+           bumpClassDay(day, 1);
+         }
        }
- 
+
        if (placed < needed) {
          conflicts.push(
            `${cls.grade}${cls.letter}: не удалось разместить ${needed - placed} урок(ов) по предмету (${a.subjectId})`
@@ -778,6 +803,6 @@
        }
      }
    }
- 
+
    return { lessons, conflicts };
  }
